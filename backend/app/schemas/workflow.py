@@ -1,6 +1,4 @@
 from datetime import datetime
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -12,11 +10,12 @@ class RankingWeights(BaseModel):
 
 class WorkflowPreviewRequest(BaseModel):
     keywords: list[str] = Field(min_length=1)
-    platform: Literal["wechat"] = "wechat"
-    discovery_source: Literal["mock_wechat_search"] = "mock_wechat_search"
+    platform: str = "wechat"
+    discovery_source: str = "mock_wechat_search"
     limit: int = Field(default=10, ge=1, le=100)
     top_k: int = Field(default=10, ge=1, le=50)
     time_window_days: int = Field(default=7, ge=1, le=30)
+    fallback_to_mock: bool = True
     ranking: RankingWeights = Field(default_factory=RankingWeights)
 
 

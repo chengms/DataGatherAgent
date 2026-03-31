@@ -1,11 +1,13 @@
 from app.adapters.base import BaseDiscoveryAdapter, BaseFetchAdapter
 from app.adapters.mock_wechat import MockWechatFetchAdapter, MockWechatSearchAdapter
+from app.adapters.web_search_live import WebSearchWechatAdapter
 
 
 class AdapterRegistry:
     def __init__(self) -> None:
         self._discovery: dict[str, BaseDiscoveryAdapter] = {
             "mock_wechat_search": MockWechatSearchAdapter(),
+            "web_search_wechat": WebSearchWechatAdapter(),
         }
         self._fetch: dict[str, BaseFetchAdapter] = {
             "wechat": MockWechatFetchAdapter(),
@@ -22,4 +24,3 @@ class AdapterRegistry:
 
 
 adapter_registry = AdapterRegistry()
-

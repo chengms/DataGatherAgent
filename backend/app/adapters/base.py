@@ -7,6 +7,7 @@ class DiscoverySourceInfo:
     name: str
     kind: str
     description: str
+    live: bool = False
 
 
 class BaseDiscoveryAdapter(ABC):
@@ -21,4 +22,3 @@ class BaseFetchAdapter(ABC):
     @abstractmethod
     def fetch(self, candidate: dict) -> dict:
         raise NotImplementedError
-

@@ -1,4 +1,5 @@
 from app.db.init_db import ensure_db_initialized
+from app.adapters.web_search_live import SearchRequestError
 from app.schemas.workflow import (
     DiscoveryCandidate,
     FetchedArticle,
@@ -21,7 +22,15 @@ class WorkflowService:
 
         discovery_candidates: list[DiscoveryCandidate] = []
         for keyword in payload.keywords:
-            raw_candidates = discovery_adapter.search(keyword=keyword, limit=payload.limit)
+            try:
+                raw_candidates = discovery_adapter.search(keyword=keyword, limit=payload.limit)
+            except SearchRequestError:
+                if not payload.fallback_to_mock:
+                    raise
+                raw_candidates = adapter_registry.get_discovery("mock_wechat_search").search(
+                    keyword=keyword,
+                    limit=payload.limit,
+                )
             discovery_candidates.extend(DiscoveryCandidate.model_validate(item) for item in raw_candidates)
         workflow_repository.save_discovery_candidates(job_id, discovery_candidates)
 
