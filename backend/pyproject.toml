@@ -1,0 +1,16 @@
+[project]
+name = "data-gather-agent-backend"
+version = "0.1.0"
+description = "Keyword-driven article discovery workflow for WeChat and other content platforms."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.116.0",
+    "uvicorn>=0.35.0",
+    "pydantic>=2.11.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
