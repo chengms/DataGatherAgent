@@ -1,6 +1,7 @@
 from app.adapters.base import BaseDiscoveryAdapter, BaseFetchAdapter
 from app.adapters.external_tool import (
     MediaCrawlerXiaohongshuDiscoveryAdapter,
+    MediaCrawlerXiaohongshuFetchAdapter,
 )
 from app.adapters.mock_wechat_clean import MockWechatFetchAdapter, MockWechatSearchAdapter
 from app.adapters.wechat_exporter_service import WechatExporterFetchAdapter, WechatExporterSearchAdapter
@@ -21,6 +22,7 @@ class AdapterRegistry:
             "mock_wechat_fetch": MockWechatFetchAdapter(),
             "web_fetch_wechat": WebFetchWechatAdapter(),
             "wechat_exporter_fetch": WechatExporterFetchAdapter(),
+            "xiaohongshu_external_fetch": MediaCrawlerXiaohongshuFetchAdapter(),
         }
 
     def get_discovery(self, name: str) -> BaseDiscoveryAdapter:

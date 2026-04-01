@@ -73,3 +73,30 @@ class WorkflowServiceTests(unittest.TestCase):
         mock_discovery.discover.assert_called_once_with(keyword="AI Agent", limit=2)
         mock_fetch.fetch_article.assert_called_once()
         workflow_repository.complete_job.assert_called_once()
+
+    def test_xiaohongshu_failures_do_not_fall_back_to_wechat_mock(self) -> None:
+        request_payload = WorkflowPreviewRequest(
+            keywords=["AI Agent"],
+            platform="xiaohongshu",
+            discovery_source="xiaohongshu_external_search",
+            fetch_source="xiaohongshu_external_fetch",
+            limit=2,
+            top_k=1,
+            fallback_to_mock=True,
+        )
+        live_discovery = MagicMock()
+        live_discovery.discover.side_effect = SearchRequestError("search failed")
+
+        with (
+            patch("app.services.workflow.ensure_db_initialized"),
+            patch("app.services.workflow.workflow_repository") as workflow_repository,
+            patch("app.services.workflow.adapter_registry") as adapter_registry,
+        ):
+            workflow_repository.create_job.return_value = 101
+            adapter_registry.get_discovery.side_effect = lambda name: {
+                "xiaohongshu_external_search": live_discovery,
+            }[name]
+            adapter_registry.get_fetch.side_effect = lambda name: {}
+
+            with self.assertRaises(SearchRequestError):
+                WorkflowService().run_preview(request_payload)

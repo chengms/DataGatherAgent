@@ -7,14 +7,15 @@ from app.adapters.base import AdapterInfo
 from app.adapters.external_tool import (
     ExternalCommandSpec,
     ExternalDiscoveryAdapter,
+    ExternalFetchAdapter,
     ExternalRepositorySpec,
     ExternalRunResult,
     ExternalToolRunner,
     MediaCrawlerXiaohongshuDiscoveryAdapter,
-    StubWechatExporterDiscoveryAdapter,
+    MediaCrawlerXiaohongshuFetchAdapter,
 )
-from app.core.exceptions import SearchRequestError
-from app.schemas.workflow import DiscoveryCandidate
+from app.core.exceptions import FetchRequestError, SearchRequestError
+from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 
 
 class FakeRunner(ExternalToolRunner):
@@ -62,6 +63,44 @@ class DemoExternalDiscoveryAdapter(ExternalDiscoveryAdapter):
         ]
 
 
+class DemoExternalFetchAdapter(ExternalFetchAdapter):
+    info = AdapterInfo(
+        name="demo_external_fetch",
+        kind="fetch",
+        platform="xiaohongshu",
+        description="Test external fetch adapter.",
+    )
+    repository = ExternalRepositorySpec(
+        slug="demo",
+        default_dirname="demo",
+        remote_url="git@github.com:example/demo.git",
+        env_var="DATA_GATHER_DEMO_TOOL_DIR",
+    )
+
+    def build_fetch_command(self, candidate: DiscoveryCandidate) -> ExternalCommandSpec:
+        return ExternalCommandSpec(argv=["demo", candidate.source_url], cwd=Path("."))
+
+    def parse_fetch_result(
+        self,
+        candidate: DiscoveryCandidate,
+        result: ExternalRunResult,
+    ) -> FetchedArticle:
+        payload = json.loads(result.stdout)
+        item = payload["item"]
+        return FetchedArticle(
+            keyword=candidate.keyword,
+            platform="xiaohongshu",
+            title=item["title"],
+            source_url=item["source_url"],
+            account_name=item["account_name"],
+            publish_time=datetime.fromisoformat(item["publish_time"].replace("Z", "+00:00")),
+            read_count=item["read_count"],
+            comment_count=item["comment_count"],
+            content_text=item["content_text"],
+            source_id=item["source_id"],
+        )
+
+
 class ExternalToolAdapterTests(unittest.TestCase):
     def test_external_discovery_adapter_parses_runner_output(self) -> None:
         runner = FakeRunner(
@@ -103,11 +142,65 @@ class ExternalToolAdapterTests(unittest.TestCase):
         with self.assertRaises(SearchRequestError):
             adapter.discover(keyword="AI", limit=1)
 
-    def test_stub_adapter_exposes_managed_repository_metadata(self) -> None:
-        adapter = StubWechatExporterDiscoveryAdapter()
-        metadata = adapter.describe_managed_repository()
-        self.assertEqual(metadata["slug"], "wechat-exporter")
-        self.assertIn("wechat-article-exporter", metadata["remote_url"])
+    def test_external_fetch_adapter_parses_runner_output(self) -> None:
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="demo_external_search",
+            title="XHS Title",
+            snippet="Summary",
+            source_url="https://www.xiaohongshu.com/explore/demo",
+            account_name="Author A",
+            discovered_at=datetime.now(UTC),
+        )
+        runner = FakeRunner(
+            ExternalRunResult(
+                argv=["demo"],
+                cwd=Path("."),
+                exit_code=0,
+                stdout=json.dumps(
+                    {
+                        "item": {
+                            "title": "XHS Title",
+                            "source_url": candidate.source_url,
+                            "account_name": "Author A",
+                            "publish_time": "2026-04-01T00:00:00Z",
+                            "read_count": 120,
+                            "comment_count": 8,
+                            "content_text": "正文",
+                            "source_id": "demo",
+                        }
+                    }
+                ),
+                stderr="",
+            )
+        )
+        adapter = DemoExternalFetchAdapter(runner=runner)
+        article = adapter.fetch_article(candidate)
+        self.assertEqual(article.platform, "xiaohongshu")
+        self.assertEqual(article.source_id, "demo")
+
+    def test_external_fetch_adapter_raises_domain_error_on_nonzero_exit(self) -> None:
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="demo_external_search",
+            title="XHS Title",
+            snippet="Summary",
+            source_url="https://www.xiaohongshu.com/explore/demo",
+            account_name="Author A",
+            discovered_at=datetime.now(UTC),
+        )
+        runner = FakeRunner(
+            ExternalRunResult(
+                argv=["demo"],
+                cwd=Path("."),
+                exit_code=2,
+                stdout="",
+                stderr="boom",
+            )
+        )
+        adapter = DemoExternalFetchAdapter(runner=runner)
+        with self.assertRaises(FetchRequestError):
+            adapter.fetch_article(candidate)
 
     def test_mediacrawler_adapter_points_to_managed_repo(self) -> None:
         adapter = MediaCrawlerXiaohongshuDiscoveryAdapter()
@@ -140,6 +233,48 @@ class ExternalToolAdapterTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].source_engine, "xiaohongshu_external_search")
         self.assertEqual(items[0].account_name, "Author A")
+
+    def test_mediacrawler_fetch_adapter_points_to_managed_repo(self) -> None:
+        adapter = MediaCrawlerXiaohongshuFetchAdapter()
+        metadata = adapter.describe_managed_repository()
+        self.assertEqual(metadata["slug"], "mediacrawler")
+        self.assertIn("MediaCrawler", metadata["path"])
+
+    def test_mediacrawler_fetch_adapter_parses_normalized_output(self) -> None:
+        adapter = MediaCrawlerXiaohongshuFetchAdapter()
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="xiaohongshu_external_search",
+            title="XHS Title",
+            snippet="XHS Summary",
+            source_url="https://www.xiaohongshu.com/explore/demo",
+            account_name="Author A",
+            discovered_at=datetime.now(UTC),
+        )
+        result = ExternalRunResult(
+            argv=["python"],
+            cwd=Path("."),
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "item": {
+                        "title": "XHS Title",
+                        "source_url": "https://www.xiaohongshu.com/explore/demo",
+                        "account_name": "Author A",
+                        "publish_time": "2026-04-01T00:00:00Z",
+                        "read_count": 321,
+                        "comment_count": 17,
+                        "content_text": "详细正文",
+                        "source_id": "demo",
+                    }
+                }
+            ),
+            stderr="",
+        )
+        article = adapter.parse_fetch_result(candidate=candidate, result=result)
+        self.assertEqual(article.platform, "xiaohongshu")
+        self.assertEqual(article.read_count, 321)
+        self.assertEqual(article.comment_count, 17)
 
 
 if __name__ == "__main__":

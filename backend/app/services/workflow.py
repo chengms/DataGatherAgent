@@ -12,6 +12,16 @@ from app.services.registry import adapter_registry
 
 
 class WorkflowService:
+    def _fallback_discovery_source(self, platform: str) -> str | None:
+        if platform == "wechat":
+            return "mock_wechat_search"
+        return None
+
+    def _fallback_fetch_source(self, platform: str) -> str | None:
+        if platform == "wechat":
+            return "mock_wechat_fetch"
+        return None
+
     def run_preview(self, payload: WorkflowPreviewRequest) -> WorkflowPreviewResponse:
         ensure_db_initialized()
         job_id = workflow_repository.create_job(payload)
@@ -23,9 +33,10 @@ class WorkflowService:
             try:
                 candidates = discovery_adapter.discover(keyword=keyword, limit=payload.limit)
             except SearchRequestError:
-                if not payload.fallback_to_mock:
+                fallback_source = self._fallback_discovery_source(payload.platform)
+                if not payload.fallback_to_mock or fallback_source is None:
                     raise
-                candidates = adapter_registry.get_discovery("mock_wechat_search").discover(
+                candidates = adapter_registry.get_discovery(fallback_source).discover(
                     keyword=keyword,
                     limit=payload.limit,
                 )
@@ -37,9 +48,10 @@ class WorkflowService:
             try:
                 article = fetch_adapter.fetch_article(candidate)
             except FetchRequestError:
-                if not payload.fallback_to_mock:
+                fallback_source = self._fallback_fetch_source(payload.platform)
+                if not payload.fallback_to_mock or fallback_source is None:
                     raise
-                article = adapter_registry.get_fetch("mock_wechat_fetch").fetch_article(candidate)
+                article = adapter_registry.get_fetch(fallback_source).fetch_article(candidate)
             fetched_articles.append(article)
         workflow_repository.save_fetched_articles(job_id, fetched_articles)
 
