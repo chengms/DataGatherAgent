@@ -1,0 +1,13 @@
+{
+  "global_env": {
+    "WECHAT_EXPORTER_API_KEY": "replace-with-your-api-key"
+  },
+  "services": {
+    "wechat_exporter": {
+      "env": {}
+    },
+    "backend": {
+      "env": {}
+    }
+  }
+}

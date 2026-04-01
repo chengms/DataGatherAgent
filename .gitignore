@@ -41,3 +41,5 @@ backend/data/
 # Environment files
 .env
 .env.*
+external_tools/
+services.local.json

@@ -14,6 +14,8 @@ Quick launchers:
 
 - Windows PowerShell: `./start.ps1`
 - Linux/macOS/WSL: `./start.sh`
+- Full stack Windows PowerShell: `./up.ps1`
+- Full stack Linux/macOS/WSL: `./up.sh`
 
 After startup, open `http://127.0.0.1:8000/` for the built-in workflow console.
 
@@ -50,6 +52,26 @@ Monitored test launchers from the repository root:
 - Linux/macOS/WSL: `./test-watch.sh`
 
 The startup scripts already run with heartbeat logging and idle timeout checks via `scripts/run_with_watch.py`.
+
+## Full Stack Startup
+
+To start the backend together with managed external services, use:
+
+```bash
+./up.sh
+```
+
+or on Windows:
+
+```powershell
+.\up.ps1
+```
+
+Service orchestration is driven by `services.manifest.json`.
+
+- Managed third-party repositories are cloned under `external_tools/`
+- Existing managed repositories must stay clean; the launcher will only update them with fast-forward pulls
+- Local overrides such as API keys belong in `services.local.json` (copy from `services.local.example.json`)
 
 ## Current Scope
 

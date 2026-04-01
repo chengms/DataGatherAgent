@@ -23,6 +23,8 @@ start.ps1
 start.sh
 test-watch.ps1
 test-watch.sh
+up.ps1
+up.sh
 ```
 
 ## Local Run
@@ -37,6 +39,8 @@ Repository root convenience scripts:
 
 - `./start.ps1`
 - `./start.sh`
+- `./up.ps1`
+- `./up.sh`
 
 ## Tests
 
@@ -101,6 +105,20 @@ For the service-mode WeChat exporter integration, set:
 
 - `WECHAT_EXPORTER_BASE_URL`
 - `WECHAT_EXPORTER_API_KEY`
+
+## Managed Repositories
+
+One-click startup is managed by `scripts/manage_services.py` and `services.manifest.json`.
+
+Rules:
+
+1. External repositories live under `external_tools/`
+2. They are not committed into this repository
+3. The launcher clones them when missing
+4. If a managed repository already exists, the launcher only updates it when `git status --porcelain` is clean
+5. Updates use `git pull --ff-only` so upstream merges remain straightforward
+
+Local per-machine overrides belong in `services.local.json`.
 
 ## Validation Checklist
 
