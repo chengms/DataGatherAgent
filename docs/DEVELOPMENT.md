@@ -120,6 +120,19 @@ Rules:
 
 Local per-machine overrides belong in `services.local.json`.
 
+Recommended setup:
+
+1. Copy `services.local.example.json` to `services.local.json`
+2. Fill in `WECHAT_EXPORTER_API_KEY`
+3. Run `./up.sh` or `.\up.ps1`
+
+The launcher fails early if:
+
+- required binaries are missing
+- required environment values are unset
+- a configured port is already occupied
+- a configured health endpoint never becomes healthy
+
 ## Validation Checklist
 
 1. Run monitored tests with `test-watch.ps1` or `test-watch.sh`

@@ -6,6 +6,8 @@
       "repo_url": "git@github.com:wechat-article/wechat-article-exporter.git",
       "branch": "master",
       "repo_dir": "external_tools/wechat-article-exporter",
+      "requires": ["git", "yarn", "node"],
+      "required_env": ["WECHAT_EXPORTER_API_KEY"],
       "install": ["yarn", "install", "--frozen-lockfile"],
       "start": ["yarn", "dev", "--host", "0.0.0.0", "--port", "3000"],
       "ready_port": 3000
@@ -14,12 +16,14 @@
       "name": "backend",
       "kind": "internal",
       "cwd": "backend",
+      "requires": ["python"],
       "install": ["python", "-m", "pip", "install", "-e", "."],
       "start": ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
       "env": {
         "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000"
       },
-      "ready_port": 8000
+      "ready_port": 8000,
+      "healthcheck_url": "http://127.0.0.1:8000/health"
     }
   ]
 }

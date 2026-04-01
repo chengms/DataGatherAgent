@@ -14,6 +14,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +67,40 @@ def merged_env(service: dict[str, Any], global_env: dict[str, Any], service_over
     if service["name"] == "backend":
         env.setdefault("PYTHONUNBUFFERED", "1")
     return env
+
+
+def ensure_required_binaries(service: dict[str, Any]) -> None:
+    missing: list[str] = []
+    for binary in service.get("requires", []):
+        if shutil.which(binary) is None:
+            missing.append(binary)
+    if missing:
+        raise RuntimeError(
+            f"{service['name']} is missing required commands: {', '.join(missing)}"
+        )
+
+
+def ensure_required_env(service: dict[str, Any], env: dict[str, str]) -> None:
+    missing: list[str] = []
+    for name in service.get("required_env", []):
+        value = env.get(name)
+        if value in {None, ""}:
+            missing.append(name)
+    if missing:
+        config_hint = (
+            "Copy services.local.example.json to services.local.json and fill in the missing values, "
+            "or export them in the current shell environment."
+        )
+        raise RuntimeError(
+            f"{service['name']} is missing required environment values: {', '.join(missing)}. "
+            + config_hint
+        )
+
+
+def is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
 def run_command(command: list[str], cwd: Path, env: dict[str, str]) -> None:
@@ -153,12 +189,28 @@ def wait_for_port(port: int, timeout_seconds: int = 90) -> None:
     raise RuntimeError(f"service on port {port} did not become ready within {timeout_seconds}s")
 
 
+def wait_for_healthcheck(url: str, timeout_seconds: int = 90) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                if 200 <= response.status < 300:
+                    return
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            time.sleep(1)
+            continue
+        time.sleep(1)
+    raise RuntimeError(f"service healthcheck did not succeed within {timeout_seconds}s: {url}")
+
+
 def prepare_service(service: dict[str, Any], global_env: dict[str, Any], overrides: dict[str, Any], update: bool) -> tuple[Path, dict[str, str]]:
+    ensure_required_binaries(service)
     if service["kind"] == "managed_repo":
         cwd = ensure_managed_repo(service, update=update)
     else:
         cwd = resolve_path(service["cwd"])
     env = merged_env(service, global_env, overrides)
+    ensure_required_env(service, env)
     install_command = service.get("install")
     if install_command:
         run_command(install_command, cwd, env)
@@ -177,6 +229,11 @@ def command_up(update: bool) -> None:
     services, global_env, overrides = load_manifest()
     prepared: list[tuple[dict[str, Any], Path, dict[str, str]]] = []
     for service in services:
+        ready_port = service.get("ready_port")
+        if ready_port and is_port_in_use(int(ready_port)):
+            raise RuntimeError(
+                f"{service['name']} cannot start because port {ready_port} is already in use"
+            )
         cwd, env = prepare_service(service, global_env, overrides, update=update)
         prepared.append((service, cwd, env))
 
@@ -189,6 +246,10 @@ def command_up(update: bool) -> None:
             if ready_port:
                 wait_for_port(int(ready_port))
                 log(f"{service['name']} is ready on port {ready_port}")
+            healthcheck_url = service.get("healthcheck_url")
+            if healthcheck_url:
+                wait_for_healthcheck(str(healthcheck_url))
+                log(f"{service['name']} passed healthcheck {healthcheck_url}")
 
         log("all services are running; press Ctrl+C to stop them")
         while True:

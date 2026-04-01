@@ -103,6 +103,15 @@ Required environment variables:
 - `WECHAT_EXPORTER_BASE_URL`
 - `WECHAT_EXPORTER_API_KEY`
 
+For one-click local startup, copy `services.local.example.json` to `services.local.json` and place the API key there if you do not want to export it in your shell.
+
+The managed launcher now checks for:
+
+- required binaries such as `python`, `node`, and `yarn`
+- required environment values such as `WECHAT_EXPORTER_API_KEY`
+- occupied ports before startup
+- HTTP health endpoints when configured
+
 The Xiaohongshu adapter remains a scaffold for the next platform integration.
 
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
