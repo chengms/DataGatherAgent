@@ -6,8 +6,14 @@
     "wechat_exporter": {
       "env": {}
     },
-    "backend": {
+    "mediacrawler_xhs": {
       "env": {}
+    },
+    "backend": {
+      "env": {
+        "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000",
+        "XHS_MEDIACRAWLER_BASE_URL": "http://127.0.0.1:8080"
+      }
     }
   }
 }

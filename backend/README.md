@@ -111,8 +111,14 @@ The managed launcher now checks for:
 - required environment values such as `WECHAT_EXPORTER_API_KEY`
 - occupied ports before startup
 - HTTP health endpoints when configured
+- clean upstream checkouts before attempting fast-forward updates
 
-The Xiaohongshu adapter remains a scaffold for the next platform integration.
+The managed stack now covers two external repositories:
+
+- `wechat-article-exporter` as the WeChat service on port `3000`
+- `MediaCrawler` as the Xiaohongshu-oriented managed crawler service on port `8080`
+
+`xiaohongshu_external_search` now points at the managed `MediaCrawler` checkout. The repository lifecycle is wired, but the backend-side search command mapping is still intentionally isolated behind that adapter instead of patching upstream files.
 
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
 

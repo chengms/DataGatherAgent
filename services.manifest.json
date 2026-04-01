@@ -13,6 +13,18 @@
       "ready_port": 3000
     },
     {
+      "name": "mediacrawler_xhs",
+      "kind": "managed_repo",
+      "repo_url": "git@github.com:NanmiCoder/MediaCrawler.git",
+      "branch": "main",
+      "repo_dir": "external_tools/MediaCrawler",
+      "requires": ["git", "uv", "node"],
+      "install": ["uv", "sync"],
+      "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
+      "ready_port": 8080,
+      "healthcheck_url": "http://127.0.0.1:8080/api/health"
+    },
+    {
       "name": "backend",
       "kind": "internal",
       "cwd": "backend",
@@ -20,7 +32,9 @@
       "install": ["python", "-m", "pip", "install", "-e", "."],
       "start": ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
       "env": {
-        "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000"
+        "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000",
+        "XHS_MEDIACRAWLER_BASE_URL": "http://127.0.0.1:8080",
+        "DATA_GATHER_XHS_CRAWLER_DIR": "../external_tools/MediaCrawler"
       },
       "ready_port": 8000,
       "healthcheck_url": "http://127.0.0.1:8000/health"

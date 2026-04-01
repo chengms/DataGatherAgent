@@ -180,25 +180,30 @@ class StubWechatExporterDiscoveryAdapter(ExternalDiscoveryAdapter):
         raise NotImplementedError
 
 
-class StubXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
+class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
     info = AdapterInfo(
         name="xiaohongshu_external_search",
         kind="search",
         platform="xiaohongshu",
-        description="External-tool discovery adapter placeholder for a mature Xiaohongshu crawler repository.",
+        description="Managed MediaCrawler-based Xiaohongshu discovery adapter scaffold backed by a clean upstream repository checkout.",
         live=False,
     )
     repository = ExternalRepositorySpec(
-        slug="xiaohongshu-crawler",
-        default_dirname="xiaohongshu-crawler",
+        slug="mediacrawler",
+        default_dirname="MediaCrawler",
         remote_url="git@github.com:NanmiCoder/MediaCrawler.git",
         env_var="DATA_GATHER_XHS_CRAWLER_DIR",
     )
 
     def build_discovery_command(self, keyword: str, limit: int) -> ExternalCommandSpec:
         raise SearchRequestError(
-            "external Xiaohongshu discovery adapter is scaffolded but not wired to a concrete repository command yet",
-            details=self.describe_managed_repository(),
+            "managed MediaCrawler checkout is ready, but the Xiaohongshu search command mapping is not wired yet",
+            details={
+                **self.describe_managed_repository(),
+                "keyword": keyword,
+                "limit": limit,
+                "service_hint": "Run ./up.sh or .\\up.ps1 to prepare and start the managed MediaCrawler service.",
+            },
         )
 
     def parse_discovery_result(

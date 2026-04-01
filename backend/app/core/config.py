@@ -30,3 +30,4 @@ def get_env(name: str, default: str | None = None) -> str | None:
 
 WECHAT_EXPORTER_BASE_URL = get_env("WECHAT_EXPORTER_BASE_URL", "https://down.mptext.top")
 WECHAT_EXPORTER_API_KEY = get_env("WECHAT_EXPORTER_API_KEY")
+XHS_MEDIACRAWLER_BASE_URL = get_env("XHS_MEDIACRAWLER_BASE_URL", "http://127.0.0.1:8080")

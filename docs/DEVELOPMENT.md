@@ -133,6 +133,13 @@ The launcher fails early if:
 - a configured port is already occupied
 - a configured health endpoint never becomes healthy
 
+Managed external repositories currently covered by `up.sh` / `up.ps1`:
+
+- `wechat-article-exporter` on port `3000`
+- `MediaCrawler` on port `8080`
+
+The `MediaCrawler` integration is kept as a clean managed checkout with no local source edits so upstream pulls remain fast-forward friendly. The backend discovery adapter is pointed at that repository path and can be completed without modifying the upstream checkout.
+
 ## Validation Checklist
 
 1. Run monitored tests with `test-watch.ps1` or `test-watch.sh`

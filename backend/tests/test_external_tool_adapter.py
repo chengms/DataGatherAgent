@@ -10,6 +10,7 @@ from app.adapters.external_tool import (
     ExternalRepositorySpec,
     ExternalRunResult,
     ExternalToolRunner,
+    MediaCrawlerXiaohongshuDiscoveryAdapter,
     StubWechatExporterDiscoveryAdapter,
 )
 from app.core.exceptions import SearchRequestError
@@ -107,6 +108,13 @@ class ExternalToolAdapterTests(unittest.TestCase):
         metadata = adapter.describe_managed_repository()
         self.assertEqual(metadata["slug"], "wechat-exporter")
         self.assertIn("wechat-article-exporter", metadata["remote_url"])
+
+    def test_mediacrawler_adapter_points_to_managed_repo(self) -> None:
+        adapter = MediaCrawlerXiaohongshuDiscoveryAdapter()
+        metadata = adapter.describe_managed_repository()
+        self.assertEqual(metadata["slug"], "mediacrawler")
+        self.assertIn("MediaCrawler", metadata["path"])
+        self.assertIn("NanmiCoder/MediaCrawler", metadata["remote_url"])
 
 
 if __name__ == "__main__":
