@@ -138,7 +138,12 @@ Managed external repositories currently covered by `up.sh` / `up.ps1`:
 - `wechat-article-exporter` on port `3000`
 - `MediaCrawler` on port `8080`
 
-The `MediaCrawler` integration is kept as a clean managed checkout with no local source edits so upstream pulls remain fast-forward friendly. The backend discovery adapter is pointed at that repository path and can be completed without modifying the upstream checkout.
+The `MediaCrawler` integration is kept as a clean managed checkout with no local source edits so upstream pulls remain fast-forward friendly. Xiaohongshu discovery is executed through `scripts/mediacrawler_xhs_runner.py`, which overlays temporary runtime config and leaves the upstream repository clean.
+
+Optional Xiaohongshu runtime variables:
+
+- `XHS_MEDIACRAWLER_LOGIN_TYPE`
+- `XHS_MEDIACRAWLER_COOKIES`
 
 ## Validation Checklist
 

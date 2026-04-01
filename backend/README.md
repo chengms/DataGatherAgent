@@ -118,7 +118,10 @@ The managed stack now covers two external repositories:
 - `wechat-article-exporter` as the WeChat service on port `3000`
 - `MediaCrawler` as the Xiaohongshu-oriented managed crawler service on port `8080`
 
-`xiaohongshu_external_search` now points at the managed `MediaCrawler` checkout. The repository lifecycle is wired, but the backend-side search command mapping is still intentionally isolated behind that adapter instead of patching upstream files.
+`xiaohongshu_external_search` now executes through a local wrapper script that runs inside the managed `MediaCrawler` checkout without editing upstream files. Optional runtime variables for that path are:
+
+- `XHS_MEDIACRAWLER_LOGIN_TYPE`
+- `XHS_MEDIACRAWLER_COOKIES`
 
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
 

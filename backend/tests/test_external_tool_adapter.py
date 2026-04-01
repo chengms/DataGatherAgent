@@ -116,6 +116,31 @@ class ExternalToolAdapterTests(unittest.TestCase):
         self.assertIn("MediaCrawler", metadata["path"])
         self.assertIn("NanmiCoder/MediaCrawler", metadata["remote_url"])
 
+    def test_mediacrawler_adapter_parses_normalized_output(self) -> None:
+        adapter = MediaCrawlerXiaohongshuDiscoveryAdapter()
+        result = ExternalRunResult(
+            argv=["python"],
+            cwd=Path("."),
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "XHS Title",
+                            "snippet": "XHS Summary",
+                            "source_url": "https://www.xiaohongshu.com/explore/demo",
+                            "account_name": "Author A",
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+        items = adapter.parse_discovery_result(keyword="AI", result=result)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].source_engine, "xiaohongshu_external_search")
+        self.assertEqual(items[0].account_name, "Author A")
+
 
 if __name__ == "__main__":
     unittest.main()

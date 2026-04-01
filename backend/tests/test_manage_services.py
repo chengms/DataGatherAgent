@@ -32,6 +32,21 @@ class ManageServicesTests(unittest.TestCase):
             socket_instance.connect_ex.return_value = 0
             self.assertTrue(manage_services.is_port_in_use(8000))
 
+    def test_prepare_service_runs_multiple_install_steps(self) -> None:
+        service = {
+            "name": "mediacrawler_xhs",
+            "kind": "internal",
+            "cwd": ".",
+            "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
+        }
+        with patch("manage_services.ensure_required_binaries"), patch(
+            "manage_services.ensure_required_env"
+        ), patch("manage_services.run_command") as run_command:
+            manage_services.prepare_service(service, {}, {}, update=False)
+        self.assertEqual(run_command.call_count, 2)
+        self.assertEqual(run_command.call_args_list[0].args[0], ["uv", "sync"])
+        self.assertEqual(run_command.call_args_list[1].args[0], ["uv", "run", "playwright", "install"])
+
 
 if __name__ == "__main__":
     unittest.main()

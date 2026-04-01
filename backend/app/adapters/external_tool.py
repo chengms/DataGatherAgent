@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter, BaseFetchAdapter
-from app.core.config import EXTERNAL_TOOLS_DIR
+from app.core.config import BASE_DIR, EXTERNAL_TOOLS_DIR
 from app.core.exceptions import FetchRequestError, SearchRequestError
 from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 
@@ -186,7 +188,7 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
         kind="search",
         platform="xiaohongshu",
         description="Managed MediaCrawler-based Xiaohongshu discovery adapter scaffold backed by a clean upstream repository checkout.",
-        live=False,
+        live=True,
     )
     repository = ExternalRepositorySpec(
         slug="mediacrawler",
@@ -196,14 +198,29 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
     )
 
     def build_discovery_command(self, keyword: str, limit: int) -> ExternalCommandSpec:
-        raise SearchRequestError(
-            "managed MediaCrawler checkout is ready, but the Xiaohongshu search command mapping is not wired yet",
-            details={
-                **self.describe_managed_repository(),
-                "keyword": keyword,
-                "limit": limit,
-                "service_hint": "Run ./up.sh or .\\up.ps1 to prepare and start the managed MediaCrawler service.",
-            },
+        repo_path = self.managed_repository_path()
+        if not repo_path.exists():
+            raise SearchRequestError(
+                "managed MediaCrawler checkout is missing",
+                details={
+                    **self.describe_managed_repository(),
+                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
+                },
+            )
+        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner.py"
+        return ExternalCommandSpec(
+            argv=[
+                sys.executable,
+                str(runner_script),
+                "--repo",
+                str(repo_path),
+                "--keyword",
+                keyword,
+                "--limit",
+                str(limit),
+            ],
+            cwd=repo_path,
+            timeout_seconds=600,
         )
 
     def parse_discovery_result(
@@ -211,4 +228,26 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
         keyword: str,
         result: ExternalRunResult,
     ) -> list[DiscoveryCandidate]:
-        raise NotImplementedError
+        payload = result.parse_json()
+        items = payload["items"] if isinstance(payload, dict) else []
+        candidates: list[DiscoveryCandidate] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            source_url = item.get("source_url")
+            account_name = item.get("account_name")
+            if not isinstance(title, str) or not isinstance(source_url, str) or not isinstance(account_name, str):
+                continue
+            candidates.append(
+                DiscoveryCandidate(
+                    keyword=keyword,
+                    source_engine=self.info.name,
+                    title=title,
+                    snippet=str(item.get("snippet", "")),
+                    source_url=source_url,
+                    account_name=account_name,
+                    discovered_at=datetime.now(UTC),
+                )
+            )
+        return candidates

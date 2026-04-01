@@ -213,7 +213,11 @@ def prepare_service(service: dict[str, Any], global_env: dict[str, Any], overrid
     ensure_required_env(service, env)
     install_command = service.get("install")
     if install_command:
-        run_command(install_command, cwd, env)
+        if install_command and isinstance(install_command[0], list):
+            for step in install_command:
+                run_command(step, cwd, env)
+        else:
+            run_command(install_command, cwd, env)
     return cwd, env
 
 

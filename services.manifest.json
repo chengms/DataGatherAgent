@@ -19,7 +19,7 @@
       "branch": "main",
       "repo_dir": "external_tools/MediaCrawler",
       "requires": ["git", "uv", "node"],
-      "install": ["uv", "sync"],
+      "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
       "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
       "ready_port": 8080,
       "healthcheck_url": "http://127.0.0.1:8080/api/health"

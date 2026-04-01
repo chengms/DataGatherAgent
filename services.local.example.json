@@ -7,7 +7,10 @@
       "env": {}
     },
     "mediacrawler_xhs": {
-      "env": {}
+      "env": {
+        "XHS_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "XHS_MEDIACRAWLER_COOKIES": ""
+      }
     },
     "backend": {
       "env": {
