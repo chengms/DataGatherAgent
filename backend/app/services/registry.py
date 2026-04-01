@@ -1,9 +1,9 @@
 from app.adapters.base import BaseDiscoveryAdapter, BaseFetchAdapter
 from app.adapters.external_tool import (
-    StubWechatExporterDiscoveryAdapter,
     StubXiaohongshuDiscoveryAdapter,
 )
 from app.adapters.mock_wechat_clean import MockWechatFetchAdapter, MockWechatSearchAdapter
+from app.adapters.wechat_exporter_service import WechatExporterFetchAdapter, WechatExporterSearchAdapter
 from app.adapters.web_fetch_live import WebFetchWechatAdapter
 from app.adapters.web_search_live import WebSearchWechatAdapter
 from app.core.exceptions import AdapterNotFoundError
@@ -14,12 +14,13 @@ class AdapterRegistry:
         self._discovery: dict[str, BaseDiscoveryAdapter] = {
             "mock_wechat_search": MockWechatSearchAdapter(),
             "web_search_wechat": WebSearchWechatAdapter(),
-            "wechat_exporter_search": StubWechatExporterDiscoveryAdapter(),
+            "wechat_exporter_search": WechatExporterSearchAdapter(),
             "xiaohongshu_external_search": StubXiaohongshuDiscoveryAdapter(),
         }
         self._fetch: dict[str, BaseFetchAdapter] = {
             "mock_wechat_fetch": MockWechatFetchAdapter(),
             "web_fetch_wechat": WebFetchWechatAdapter(),
+            "wechat_exporter_fetch": WechatExporterFetchAdapter(),
         }
 
     def get_discovery(self, name: str) -> BaseDiscoveryAdapter:

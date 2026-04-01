@@ -71,9 +71,17 @@ The adapter layer now supports two integration modes:
 Scaffolded external discovery adapters are already registered for:
 
 - `wechat_exporter_search`
+- `wechat_exporter_fetch`
 - `xiaohongshu_external_search`
 
-These are not wired to a concrete command yet, but they establish the contract for integrating and later updating third-party crawler repositories without mixing their code into the main app package.
+`wechat_exporter_search` and `wechat_exporter_fetch` are now wired for service-mode integration against a self-hosted `wechat-article-exporter` instance.
+
+Required environment variables:
+
+- `WECHAT_EXPORTER_BASE_URL`
+- `WECHAT_EXPORTER_API_KEY`
+
+The Xiaohongshu adapter remains a scaffold for the next platform integration.
 
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
 

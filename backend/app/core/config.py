@@ -21,3 +21,12 @@ def _default_db_path() -> Path:
 
 
 DB_PATH = _default_db_path()
+
+
+def get_env(name: str, default: str | None = None) -> str | None:
+    value = os.getenv(name)
+    return value if value not in {"", None} else default
+
+
+WECHAT_EXPORTER_BASE_URL = get_env("WECHAT_EXPORTER_BASE_URL", "https://down.mptext.top")
+WECHAT_EXPORTER_API_KEY = get_env("WECHAT_EXPORTER_API_KEY")

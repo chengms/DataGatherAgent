@@ -97,6 +97,11 @@ Current scaffolded repository env vars:
 - `DATA_GATHER_WECHAT_EXPORTER_DIR`
 - `DATA_GATHER_XHS_CRAWLER_DIR`
 
+For the service-mode WeChat exporter integration, set:
+
+- `WECHAT_EXPORTER_BASE_URL`
+- `WECHAT_EXPORTER_API_KEY`
+
 ## Validation Checklist
 
 1. Run monitored tests with `test-watch.ps1` or `test-watch.sh`
