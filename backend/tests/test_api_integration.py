@@ -100,7 +100,7 @@ class ApiIntegrationTests(unittest.TestCase):
     def test_root_page_is_served(self) -> None:
         with request.urlopen(self.build_url("/"), timeout=15) as response:
             html = response.read().decode("utf-8")
-        self.assertIn("Data Gather Agent", html)
+        self.assertIn("数据采集工作台", html)
         self.assertIn("/assets/app.js", html)
 
     def test_health_and_sources(self) -> None:

@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   sources: [],
   jobs: [],
   lastPreview: null,
@@ -30,7 +30,7 @@ async function requestJson(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed with status ${response.status}`);
+    throw new Error(detail || `请求失败，状态码 ${response.status}`);
   }
   return response.json();
 }
@@ -48,9 +48,9 @@ function renderSources() {
     const title = fragment.querySelector("h3");
     const description = fragment.querySelector("p");
 
-    pill.textContent = source.live ? "Live" : "Mock";
+    pill.textContent = source.live ? "在线" : "模拟";
     pill.classList.toggle("offline", !source.live);
-    kind.textContent = source.kind;
+    kind.textContent = source.kind === "search" ? "发现" : "抓取";
     title.textContent = source.name;
     description.textContent = source.description;
     elements.sourcesGrid.appendChild(fragment);
@@ -72,7 +72,7 @@ function fillSelect(select, options, preferredValue) {
   for (const item of options) {
     const option = document.createElement("option");
     option.value = item.name;
-    option.textContent = `${item.name} (${item.live ? "live" : "mock"})`;
+    option.textContent = `${item.name}（${item.live ? "在线" : "模拟"}）`;
     select.appendChild(option);
   }
   const nextValue = options.some((item) => item.name === previous)
@@ -87,17 +87,17 @@ function renderPreview() {
   const preview = state.lastPreview;
   if (!preview) {
     elements.previewSummary.innerHTML = "";
-    elements.latestPreviewMeta.textContent = "No runs yet.";
+    elements.latestPreviewMeta.textContent = "还没有运行记录。";
     elements.hotArticles.className = "article-list empty-state";
-    elements.hotArticles.textContent = "Run a preview to see ranked articles.";
+    elements.hotArticles.textContent = "运行一次预览后，这里会显示排序结果。";
     return;
   }
 
-  elements.latestPreviewMeta.textContent = `Job #${preview.job_id} with ${preview.keywords.length} keyword(s)`;
+  elements.latestPreviewMeta.textContent = `任务 #${preview.job_id}，共 ${preview.keywords.length} 个关键词`;
   const metrics = [
-    ["Discovered", preview.discovered_count],
-    ["Fetched", preview.fetched_count],
-    ["Ranked", preview.ranked_count],
+    ["已发现", preview.discovered_count],
+    ["已抓取", preview.fetched_count],
+    ["已排序", preview.ranked_count],
   ];
 
   elements.previewSummary.innerHTML = metrics.map(([label, value]) => `
@@ -109,7 +109,7 @@ function renderPreview() {
 
   if (!preview.hot_articles.length) {
     elements.hotArticles.className = "article-list empty-state";
-    elements.hotArticles.textContent = "Preview completed with no ranked articles.";
+    elements.hotArticles.textContent = "预览已完成，但没有可展示的排序结果。";
     return;
   }
 
@@ -121,18 +121,18 @@ function renderPreview() {
         <span>${Number(article.total_score).toFixed(4)}</span>
       </div>
       <h3>${escapeHtml(article.title)}</h3>
-      <p>${escapeHtml(article.account_name)} · Reads ${article.read_count} · Comments ${article.comment_count}</p>
+      <p>${escapeHtml(article.account_name)} · 阅读 ${article.read_count} · 评论 ${article.comment_count}</p>
       <p>${escapeHtml(article.score_reason)}</p>
-      <p><a href="${escapeAttribute(article.source_url)}" target="_blank" rel="noreferrer">Open source article</a></p>
+      <p><a href="${escapeAttribute(article.source_url)}" target="_blank" rel="noreferrer">打开原文</a></p>
     </article>
   `).join("");
 }
 
 function renderJobs() {
-  elements.jobsMeta.textContent = `${state.jobs.length} job(s) loaded`;
+  elements.jobsMeta.textContent = `已加载 ${state.jobs.length} 条任务`;
   if (!state.jobs.length) {
     elements.jobsList.className = "job-list empty-state";
-    elements.jobsList.textContent = "No jobs loaded.";
+    elements.jobsList.textContent = "还没有加载任务。";
     return;
   }
 
@@ -140,12 +140,12 @@ function renderJobs() {
   elements.jobsList.innerHTML = state.jobs.map((job) => `
     <article class="job-card">
       <div class="job-top">
-        <span class="pill ${job.status === "success" ? "" : "offline"}">${escapeHtml(job.status)}</span>
-        <button type="button" data-job-id="${job.id}">Open #${job.id}</button>
+        <span class="pill ${job.status === "success" ? "" : "offline"}">${escapeHtml(localizeJobStatus(job.status))}</span>
+        <button type="button" data-job-id="${job.id}">打开 #${job.id}</button>
       </div>
-      <h3>${escapeHtml(job.platform)} workflow</h3>
+      <h3>${escapeHtml(localizePlatform(job.platform))} 工作流</h3>
       <p>${escapeHtml(job.discovery_source)} → ${escapeHtml(job.fetch_source)}</p>
-      <p>Discovered ${job.discovered_count}, fetched ${job.fetched_count}, ranked ${job.ranked_count}</p>
+      <p>发现 ${job.discovered_count}，抓取 ${job.fetched_count}，排序 ${job.ranked_count}</p>
     </article>
   `).join("");
 
@@ -179,12 +179,30 @@ function setStatus(message, tone = "") {
   elements.formStatus.className = `status-line${tone ? ` ${tone}` : ""}`;
 }
 
+function localizePlatform(platform) {
+  const mapping = {
+    wechat: "公众号",
+    xiaohongshu: "小红书",
+  };
+  return mapping[platform] || platform;
+}
+
+function localizeJobStatus(status) {
+  const mapping = {
+    success: "成功",
+    failed: "失败",
+    running: "运行中",
+    pending: "等待中",
+  };
+  return mapping[status] || status;
+}
+
 async function loadHealth() {
   try {
     const payload = await requestJson("/health");
-    elements.healthBadge.textContent = payload.status === "ok" ? "API online" : "API unknown";
+    elements.healthBadge.textContent = payload.status === "ok" ? "接口正常" : "接口状态未知";
   } catch {
-    elements.healthBadge.textContent = "API offline";
+    elements.healthBadge.textContent = "接口离线";
   }
 }
 
@@ -208,12 +226,12 @@ async function runPreview(event) {
     .filter(Boolean);
 
   if (!keywords.length) {
-    setStatus("Enter at least one keyword.", "error");
+    setStatus("请至少输入一个关键词。", "error");
     return;
   }
 
   elements.runButton.disabled = true;
-  setStatus("Running workflow preview...", "");
+  setStatus("正在运行工作流预览...", "");
 
   try {
     const payload = {
@@ -231,7 +249,7 @@ async function runPreview(event) {
     });
     renderPreview();
     await loadJobs();
-    setStatus(`Preview completed for job #${state.lastPreview.job_id}.`, "success");
+    setStatus(`预览完成，任务编号 #${state.lastPreview.job_id}。`, "success");
   } catch (error) {
     setStatus(error.message, "error");
   } finally {
