@@ -16,6 +16,8 @@ Quick launchers:
 - Linux/macOS/WSL: `./start.sh`
 - Full stack Windows PowerShell: `./up.ps1`
 - Full stack Linux/macOS/WSL: `./up.sh`
+- WeChat terminal login: `./login-wechat.ps1` or `./login-wechat.sh`
+- Xiaohongshu terminal login: `./login-xhs.ps1` or `./login-xhs.sh`
 
 After startup, open `http://127.0.0.1:8000/` for the built-in workflow console.
 
@@ -104,6 +106,11 @@ Required environment variables:
 - `WECHAT_EXPORTER_API_KEY`
 
 For one-click local startup, copy `services.local.example.json` to `services.local.json` and place the API key there if you do not want to export it in your shell.
+
+Terminal login helpers are available for the managed external tools:
+
+- `login-wechat.ps1` / `login-wechat.sh` requests a QR code from the local `wechat-article-exporter` service, renders it in the terminal, waits for your scan confirmation, and stores the resulting `WECHAT_EXPORTER_API_KEY` in `services.local.json`
+- `login-xhs.ps1` / `login-xhs.sh` launches the managed `MediaCrawler` Xiaohongshu login flow, renders the QR code in the terminal, and stores the resulting cookie string in `services.local.json`
 
 The managed launcher now checks for:
 

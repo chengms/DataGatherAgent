@@ -123,8 +123,10 @@ Local per-machine overrides belong in `services.local.json`.
 Recommended setup:
 
 1. Copy `services.local.example.json` to `services.local.json`
-2. Fill in `WECHAT_EXPORTER_API_KEY`
-3. Run `./up.sh` or `.\up.ps1`
+2. Start the managed services with `./up.sh` or `.\up.ps1`
+3. Run `./login-wechat.sh` or `.\login-wechat.ps1` to scan the WeChat QR code and persist `WECHAT_EXPORTER_API_KEY`
+4. Run `./login-xhs.sh` or `.\login-xhs.ps1` to scan the Xiaohongshu QR code and persist the cookie login state
+5. Run `./up.sh` or `.\up.ps1` again when you want the full stack online with those saved credentials
 
 The launcher fails early if:
 
@@ -144,6 +146,12 @@ Optional Xiaohongshu runtime variables:
 
 - `XHS_MEDIACRAWLER_LOGIN_TYPE`
 - `XHS_MEDIACRAWLER_COOKIES`
+
+The terminal login scripts are implemented in this repository, not by patching the upstream checkouts:
+
+- [xhs_terminal_login.py](/D:/MyFile/Coder/DataGatherAgent/scripts/xhs_terminal_login.py)
+- [wechat_terminal_login.py](/D:/MyFile/Coder/DataGatherAgent/scripts/wechat_terminal_login.py)
+- [service_env_store.py](/D:/MyFile/Coder/DataGatherAgent/scripts/service_env_store.py)
 
 ## Validation Checklist
 

@@ -1,6 +1,6 @@
 {
   "global_env": {
-    "WECHAT_EXPORTER_API_KEY": "replace-with-your-api-key"
+    "WECHAT_EXPORTER_API_KEY": "filled-by-login-wechat-script"
   },
   "services": {
     "wechat_exporter": {
