@@ -14,7 +14,7 @@ class RankingService:
             + freshness_score * weights.freshness
         )
         score_reason = (
-            f"相关度 {relevance_score:.2f}，热度 {popularity_score:.2f}，时效 {freshness_score:.2f}"
+            f"relevance {relevance_score:.2f}, popularity {popularity_score:.2f}, freshness {freshness_score:.2f}"
         )
         return RankedArticle(
             keyword=article.keyword,
@@ -51,4 +51,3 @@ class RankingService:
 
 
 ranking_service = RankingService()
-

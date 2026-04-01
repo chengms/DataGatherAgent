@@ -102,3 +102,10 @@ class RankedArticleRecord(BaseModel):
 class WorkflowJobDetail(BaseModel):
     job: WorkflowJobSummary
     hot_articles: list[RankedArticleRecord]
+
+
+class SourceInfoResponse(BaseModel):
+    name: str
+    kind: str
+    description: str
+    live: bool

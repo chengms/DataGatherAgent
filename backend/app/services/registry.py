@@ -24,5 +24,11 @@ class AdapterRegistry:
     def list_discovery_sources(self) -> list[BaseDiscoveryAdapter]:
         return list(self._discovery.values())
 
+    def list_fetch_sources(self) -> list[BaseFetchAdapter]:
+        return list(self._fetch.values())
+
+    def list_sources(self) -> list[BaseDiscoveryAdapter | BaseFetchAdapter]:
+        return [*self._discovery.values(), *self._fetch.values()]
+
 
 adapter_registry = AdapterRegistry()

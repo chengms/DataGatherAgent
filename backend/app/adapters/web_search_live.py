@@ -114,6 +114,7 @@ class WebSearchWechatAdapter(BaseDiscoveryAdapter):
 
     def _extract_account_name(self, title: str, snippet: str) -> str:
         for candidate in (snippet, title):
-            if "公众号" in candidate:
-                return "微信公众号"
-        return "未知公众号"
+            lowered = candidate.lower()
+            if "wechat" in lowered or "weixin" in lowered:
+                return "WeChat Official Account"
+        return "Unknown WeChat Account"

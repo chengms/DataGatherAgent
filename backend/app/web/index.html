@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Gather Agent</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="background-grid" aria-hidden="true"></div>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Workflow Console</p>
+        <h1>Run article discovery without leaving the backend.</h1>
+        <p class="hero-text">
+          Trigger workflow previews, inspect adapter availability, and review recent ranked jobs from one page.
+        </p>
+      </div>
+      <div class="hero-status" id="healthBadge">Checking API...</div>
+    </section>
+
+    <section class="layout">
+      <article class="panel control-panel">
+        <div class="panel-head">
+          <h2>Run Preview</h2>
+          <button id="refreshSourcesButton" class="ghost-button" type="button">Refresh Sources</button>
+        </div>
+        <form id="previewForm" class="preview-form">
+          <label>
+            Keywords
+            <textarea id="keywordsInput" rows="4" placeholder="AI Agent&#10;Semiconductor&#10;Energy Storage">AI Agent
+Semiconductor</textarea>
+          </label>
+
+          <div class="two-up">
+            <label>
+              Discovery Source
+              <select id="discoverySource"></select>
+            </label>
+            <label>
+              Fetch Source
+              <select id="fetchSource"></select>
+            </label>
+          </div>
+
+          <div class="three-up">
+            <label>
+              Limit
+              <input id="limitInput" type="number" min="1" max="100" value="5">
+            </label>
+            <label>
+              Top K
+              <input id="topKInput" type="number" min="1" max="50" value="3">
+            </label>
+            <label class="toggle-wrap">
+              Fallback To Mock
+              <input id="fallbackInput" type="checkbox" checked>
+            </label>
+          </div>
+
+          <button id="runButton" class="primary-button" type="submit">Run Preview</button>
+        </form>
+        <p class="status-line" id="formStatus">Idle.</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Sources</h2>
+          <button id="refreshJobsButton" class="ghost-button" type="button">Refresh Jobs</button>
+        </div>
+        <div id="sourcesGrid" class="source-grid"></div>
+      </article>
+    </section>
+
+    <section class="layout">
+      <article class="panel result-panel">
+        <div class="panel-head">
+          <h2>Latest Preview</h2>
+          <span class="subtle" id="latestPreviewMeta">No runs yet.</span>
+        </div>
+        <div id="previewSummary" class="summary-grid"></div>
+        <div id="hotArticles" class="article-list empty-state">Run a preview to see ranked articles.</div>
+      </article>
+
+      <article class="panel jobs-panel">
+        <div class="panel-head">
+          <h2>Recent Jobs</h2>
+          <span class="subtle" id="jobsMeta">Waiting for data.</span>
+        </div>
+        <div id="jobsList" class="job-list empty-state">No jobs loaded.</div>
+      </article>
+    </section>
+  </main>
+
+  <template id="sourceCardTemplate">
+    <article class="source-card">
+      <div class="source-top">
+        <span class="pill"></span>
+        <span class="kind"></span>
+      </div>
+      <h3></h3>
+      <p></p>
+    </article>
+  </template>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
