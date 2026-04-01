@@ -12,6 +12,8 @@ uvicorn app.main:app --reload
 
 Quick launchers:
 
+- Unified bootstrap Windows PowerShell: `./bootstrap.ps1`
+- Unified bootstrap Linux/macOS/WSL: `./bootstrap.sh`
 - Windows PowerShell: `./start.ps1`
 - Linux/macOS/WSL: `./start.sh`
 - Full stack Windows PowerShell: `./up.ps1`
@@ -57,7 +59,28 @@ The startup scripts already run with heartbeat logging and idle timeout checks v
 
 ## Full Stack Startup
 
-To start the backend together with managed external services, use:
+To bootstrap a fresh machine end to end, use:
+
+```bash
+./bootstrap.sh
+```
+
+or on Windows:
+
+```powershell
+.\bootstrap.ps1
+```
+
+The bootstrap flow will:
+
+- scan required commands and repositories
+- install backend and external tool dependencies
+- start a temporary WeChat service if a QR login is needed
+- render QR codes in the terminal for WeChat and Xiaohongshu when credentials are missing
+- persist the resulting login state to `services.local.json`
+- launch the full stack after login is complete
+
+If credentials are already saved and you only want to bring the stack online, use:
 
 ```bash
 ./up.sh
