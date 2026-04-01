@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.schemas.workflow import (
     WorkflowJobDetail,
@@ -24,7 +24,4 @@ def list_workflow_jobs() -> list[WorkflowJobSummary]:
 
 @router.get("/jobs/{job_id}", response_model=WorkflowJobDetail)
 def get_workflow_job(job_id: int) -> WorkflowJobDetail:
-    try:
-        return workflow_service.get_job_detail(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="job not found") from exc
+    return workflow_service.get_job_detail(job_id)

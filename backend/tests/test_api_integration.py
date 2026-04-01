@@ -7,7 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from urllib import request
+from urllib import error, request
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -89,6 +89,14 @@ class ApiIntegrationTests(unittest.TestCase):
         with request.urlopen(http_request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    @classmethod
+    def get_error_json(cls, path: str):
+        try:
+            with request.urlopen(cls.build_url(path), timeout=15) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
     def test_root_page_is_served(self) -> None:
         with request.urlopen(self.build_url("/"), timeout=15) as response:
             html = response.read().decode("utf-8")
@@ -126,3 +134,8 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["job"]["status"], "success")
         self.assertEqual(len(detail["hot_articles"]), 2)
 
+    def test_missing_job_returns_structured_not_found(self) -> None:
+        status_code, payload = self.get_error_json("/api/workflows/jobs/999999")
+        self.assertEqual(status_code, 404)
+        self.assertEqual(payload["error"]["code"], "NOT_FOUND")
+        self.assertIn("request_id", payload)

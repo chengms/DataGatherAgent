@@ -44,6 +44,13 @@ cd backend
 python -m unittest discover -s tests -v
 ```
 
+Monitored test launchers from the repository root:
+
+- Windows PowerShell: `./test-watch.ps1`
+- Linux/macOS/WSL: `./test-watch.sh`
+
+The startup scripts already run with heartbeat logging and idle timeout checks via `scripts/run_with_watch.py`.
+
 ## Current Scope
 
 This MVP implements the workflow skeleton:

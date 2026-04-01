@@ -1,6 +1,7 @@
 from app.db.init_db import ensure_db_initialized
 from app.adapters.web_fetch_live import FetchRequestError
 from app.adapters.web_search_live import SearchRequestError
+from app.core.exceptions import JobNotFoundError
 from app.schemas.workflow import (
     DiscoveryCandidate,
     FetchedArticle,
@@ -81,7 +82,7 @@ class WorkflowService:
         jobs = workflow_repository.list_jobs()
         job_row = next((item for item in jobs if item["id"] == job_id), None)
         if job_row is None:
-            raise KeyError(job_id)
+            raise JobNotFoundError(job_id)
         ranked_rows = workflow_repository.get_job_ranked_articles(job_id)
         return WorkflowJobDetail.model_validate(
             {
