@@ -1,10 +1,6 @@
 from app.db.init_db import ensure_db_initialized
-from app.adapters.web_fetch_live import FetchRequestError
-from app.adapters.web_search_live import SearchRequestError
-from app.core.exceptions import JobNotFoundError
+from app.core.exceptions import FetchRequestError, JobNotFoundError, SearchRequestError
 from app.schemas.workflow import (
-    DiscoveryCandidate,
-    FetchedArticle,
     WorkflowJobDetail,
     WorkflowJobSummary,
     WorkflowPreviewRequest,
@@ -22,29 +18,29 @@ class WorkflowService:
         discovery_adapter = adapter_registry.get_discovery(payload.discovery_source)
         fetch_adapter = adapter_registry.get_fetch(payload.fetch_source)
 
-        discovery_candidates: list[DiscoveryCandidate] = []
+        discovery_candidates = []
         for keyword in payload.keywords:
             try:
-                raw_candidates = discovery_adapter.search(keyword=keyword, limit=payload.limit)
+                candidates = discovery_adapter.discover(keyword=keyword, limit=payload.limit)
             except SearchRequestError:
                 if not payload.fallback_to_mock:
                     raise
-                raw_candidates = adapter_registry.get_discovery("mock_wechat_search").search(
+                candidates = adapter_registry.get_discovery("mock_wechat_search").discover(
                     keyword=keyword,
                     limit=payload.limit,
                 )
-            discovery_candidates.extend(DiscoveryCandidate.model_validate(item) for item in raw_candidates)
+            discovery_candidates.extend(candidates)
         workflow_repository.save_discovery_candidates(job_id, discovery_candidates)
 
-        fetched_articles: list[FetchedArticle] = []
+        fetched_articles = []
         for candidate in discovery_candidates:
             try:
-                raw_article = fetch_adapter.fetch(candidate.model_dump())
+                article = fetch_adapter.fetch_article(candidate)
             except FetchRequestError:
                 if not payload.fallback_to_mock:
                     raise
-                raw_article = adapter_registry.get_fetch("mock_wechat_fetch").fetch(candidate.model_dump())
-            fetched_articles.append(FetchedArticle.model_validate(raw_article))
+                article = adapter_registry.get_fetch("mock_wechat_fetch").fetch_article(candidate)
+            fetched_articles.append(article)
         workflow_repository.save_fetched_articles(job_id, fetched_articles)
 
         ranked_articles = [

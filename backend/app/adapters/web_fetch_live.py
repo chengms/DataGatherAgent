@@ -4,17 +4,16 @@ from datetime import UTC, datetime
 import requests
 from bs4 import BeautifulSoup
 
-from app.adapters.base import BaseFetchAdapter, DiscoverySourceInfo
-
-
-class FetchRequestError(RuntimeError):
-    pass
+from app.adapters.base import AdapterInfo, BaseFetchAdapter
+from app.core.exceptions import FetchRequestError
+from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 
 
 class WebFetchWechatAdapter(BaseFetchAdapter):
-    info = DiscoverySourceInfo(
+    info = AdapterInfo(
         name="web_fetch_wechat",
         kind="fetch",
+        platform="wechat",
         description="Directly fetches mp.weixin.qq.com article pages and extracts article details.",
         live=True,
     )
@@ -33,8 +32,8 @@ class WebFetchWechatAdapter(BaseFetchAdapter):
             }
         )
 
-    def fetch(self, candidate: dict) -> dict:
-        url = candidate["source_url"]
+    def _fetch_article(self, candidate: DiscoveryCandidate) -> FetchedArticle:
+        url = candidate.source_url
         try:
             response = self.session.get(url, timeout=self.timeout_seconds)
         except Exception as exc:
@@ -43,29 +42,29 @@ class WebFetchWechatAdapter(BaseFetchAdapter):
             raise FetchRequestError(f"article fetch failed with status {response.status_code}")
         return self._parse_article_page(candidate, response.text)
 
-    def _parse_article_page(self, candidate: dict, html: str) -> dict:
+    def _parse_article_page(self, candidate: DiscoveryCandidate, html: str) -> FetchedArticle:
         soup = BeautifulSoup(html, "html.parser")
 
-        title = self._first_text(soup.select_one("#activity-name")) or self._first_text(soup.select_one("h1")) or candidate["title"]
-        account_name = self._first_text(soup.select_one("#js_name")) or candidate["account_name"]
+        title = self._first_text(soup.select_one("#activity-name")) or self._first_text(soup.select_one("h1")) or candidate.title
+        account_name = self._first_text(soup.select_one("#js_name")) or candidate.account_name
         publish_time = self._extract_publish_time(soup, html)
         content_text = self._extract_content_text(soup)
         read_count = self._extract_metric(html, ["read_num", "readCount"])
         comment_count = self._extract_metric(html, ["comment_id", "commentCount"])
-        source_id = candidate["source_url"].rstrip("/").split("/")[-1]
+        source_id = candidate.source_url.rstrip("/").split("/")[-1]
 
-        return {
-            "keyword": candidate["keyword"],
-            "platform": "wechat",
-            "title": title,
-            "source_url": candidate["source_url"],
-            "account_name": account_name,
-            "publish_time": publish_time,
-            "read_count": read_count,
-            "comment_count": comment_count,
-            "content_text": content_text,
-            "source_id": source_id,
-        }
+        return FetchedArticle(
+            keyword=candidate.keyword,
+            platform="wechat",
+            title=title,
+            source_url=candidate.source_url,
+            account_name=account_name,
+            publish_time=publish_time,
+            read_count=read_count,
+            comment_count=comment_count,
+            content_text=content_text,
+            source_id=source_id,
+        )
 
     def _extract_content_text(self, soup: BeautifulSoup) -> str:
         container = soup.select_one("#js_content") or soup.select_one(".rich_media_content")

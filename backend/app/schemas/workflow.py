@@ -107,5 +107,6 @@ class WorkflowJobDetail(BaseModel):
 class SourceInfoResponse(BaseModel):
     name: str
     kind: str
+    platform: str
     description: str
     live: bool

@@ -4,17 +4,16 @@ from urllib.parse import quote_plus, urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from app.adapters.base import BaseDiscoveryAdapter, DiscoverySourceInfo
-
-
-class SearchRequestError(RuntimeError):
-    pass
+from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter
+from app.core.exceptions import SearchRequestError
+from app.schemas.workflow import DiscoveryCandidate
 
 
 class WebSearchWechatAdapter(BaseDiscoveryAdapter):
-    info = DiscoverySourceInfo(
+    info = AdapterInfo(
         name="web_search_wechat",
         kind="search",
+        platform="wechat",
         description="Search engine discovery constrained to mp.weixin.qq.com pages.",
         live=True,
     )
@@ -38,7 +37,7 @@ class WebSearchWechatAdapter(BaseDiscoveryAdapter):
             }
         )
 
-    def search(self, keyword: str, limit: int) -> list[dict]:
+    def _discover(self, keyword: str, limit: int) -> list[DiscoveryCandidate]:
         query = f"site:mp.weixin.qq.com {keyword}"
         url = f"{self.base_url}?q={quote_plus(query)}&count={limit}"
         try:
@@ -50,15 +49,15 @@ class WebSearchWechatAdapter(BaseDiscoveryAdapter):
         candidates = self._parse_bing_html(response.text, limit)
         now = datetime.now(UTC)
         return [
-            {
-                "keyword": keyword,
-                "source_engine": self.info.name,
-                "title": item["title"],
-                "snippet": item["snippet"],
-                "source_url": item["source_url"],
-                "account_name": item["account_name"],
-                "discovered_at": now,
-            }
+            DiscoveryCandidate(
+                keyword=keyword,
+                source_engine=self.info.name,
+                title=item["title"],
+                snippet=item["snippet"],
+                source_url=item["source_url"],
+                account_name=item["account_name"],
+                discovered_at=now,
+            )
             for item in candidates
         ]
 

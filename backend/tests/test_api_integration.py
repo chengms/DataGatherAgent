@@ -109,6 +109,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(health["status"], "ok")
         self.assertEqual(len(sources), 4)
         self.assertEqual({item["kind"] for item in sources}, {"search", "fetch"})
+        self.assertEqual({item["platform"] for item in sources}, {"wechat"})
         self.assertTrue(any(item["name"] == "web_fetch_wechat" and item["live"] for item in sources))
 
     def test_preview_and_job_queries(self) -> None:

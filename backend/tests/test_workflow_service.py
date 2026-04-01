@@ -2,8 +2,8 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from app.adapters.web_fetch_live import FetchRequestError
-from app.adapters.web_search_live import SearchRequestError
+from app.core.exceptions import FetchRequestError, SearchRequestError
+from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 from app.schemas.workflow import WorkflowPreviewRequest
 from app.services.workflow import WorkflowService
 
@@ -19,35 +19,35 @@ class WorkflowServiceTests(unittest.TestCase):
             fallback_to_mock=True,
         )
         live_discovery = MagicMock()
-        live_discovery.search.side_effect = SearchRequestError("search failed")
+        live_discovery.discover.side_effect = SearchRequestError("search failed")
         mock_discovery = MagicMock()
-        mock_discovery.search.return_value = [
-            {
-                "keyword": "AI Agent",
-                "source_engine": "mock_wechat_search",
-                "title": "AI Agent Industry Brief 1",
-                "snippet": "summary",
-                "source_url": "https://mp.weixin.qq.com/s/mock-1",
-                "account_name": "AI Insight",
-                "discovered_at": datetime.now(UTC),
-            }
+        mock_discovery.discover.return_value = [
+            DiscoveryCandidate(
+                keyword="AI Agent",
+                source_engine="mock_wechat_search",
+                title="AI Agent Industry Brief 1",
+                snippet="summary",
+                source_url="https://mp.weixin.qq.com/s/mock-1",
+                account_name="AI Insight",
+                discovered_at=datetime.now(UTC),
+            )
         ]
 
         live_fetch = MagicMock()
-        live_fetch.fetch.side_effect = FetchRequestError("fetch failed")
+        live_fetch.fetch_article.side_effect = FetchRequestError("fetch failed")
         mock_fetch = MagicMock()
-        mock_fetch.fetch.return_value = {
-            "keyword": "AI Agent",
-            "platform": "wechat",
-            "title": "AI Agent Industry Brief 1",
-            "source_url": "https://mp.weixin.qq.com/s/mock-1",
-            "account_name": "AI Insight",
-            "publish_time": datetime.now(UTC),
-            "read_count": 3200,
-            "comment_count": 88,
-            "content_text": "AI Agent article body",
-            "source_id": "mock-1",
-        }
+        mock_fetch.fetch_article.return_value = FetchedArticle(
+            keyword="AI Agent",
+            platform="wechat",
+            title="AI Agent Industry Brief 1",
+            source_url="https://mp.weixin.qq.com/s/mock-1",
+            account_name="AI Insight",
+            publish_time=datetime.now(UTC),
+            read_count=3200,
+            comment_count=88,
+            content_text="AI Agent article body",
+            source_id="mock-1",
+        )
 
         with (
             patch("app.services.workflow.ensure_db_initialized"),
@@ -70,6 +70,6 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(response.discovered_count, 1)
         self.assertEqual(response.fetched_count, 1)
         self.assertEqual(response.ranked_count, 1)
-        mock_discovery.search.assert_called_once_with(keyword="AI Agent", limit=2)
-        mock_fetch.fetch.assert_called_once()
+        mock_discovery.discover.assert_called_once_with(keyword="AI Agent", limit=2)
+        mock_fetch.fetch_article.assert_called_once()
         workflow_repository.complete_job.assert_called_once()
