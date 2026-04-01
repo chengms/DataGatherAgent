@@ -93,7 +93,7 @@ Use `app/adapters/external_tool.py` for mature third-party crawler repositories.
 
 The intended pattern is:
 
-1. keep the external crawler in its own managed checkout under `backend/external_tools/` or point to it with an environment variable
+1. keep the external crawler in its own managed checkout under `external_tools/` or point to it with an environment variable
 2. implement an `ExternalDiscoveryAdapter` or `ExternalFetchAdapter`
 3. convert command output into `DiscoveryCandidate` and `FetchedArticle`
 4. keep repository update flow separate from the main app code so upstream updates remain manageable
@@ -154,6 +154,21 @@ The terminal login scripts are implemented in this repository, not by patching t
 - [wechat_terminal_login.py](/D:/MyFile/Coder/DataGatherAgent/scripts/wechat_terminal_login.py)
 - [service_env_store.py](/D:/MyFile/Coder/DataGatherAgent/scripts/service_env_store.py)
 - [bootstrap_stack.py](/D:/MyFile/Coder/DataGatherAgent/scripts/bootstrap_stack.py)
+
+Bootstrap behavior:
+
+1. prepare repositories and install dependencies
+2. if `WECHAT_EXPORTER_API_KEY` is missing, start a temporary local `wechat-article-exporter` instance and run terminal QR login
+3. if `XHS_MEDIACRAWLER_COOKIES` is missing, run terminal QR login against the managed `MediaCrawler` checkout
+4. persist login results to `services.local.json`
+5. stop temporary bootstrap-only processes
+6. launch the full stack through the normal managed service flow
+
+Operational notes:
+
+- `bootstrap.ps1` / `bootstrap.sh` is the preferred first-run entrypoint
+- `up.ps1` / `up.sh` assumes credentials already exist
+- `services.local.json` is machine-local and intentionally ignored by git
 
 ## Validation Checklist
 

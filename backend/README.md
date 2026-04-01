@@ -97,6 +97,8 @@ Service orchestration is driven by `services.manifest.json`.
 - Managed third-party repositories are cloned under `external_tools/`
 - Existing managed repositories must stay clean; the launcher will only update them with fast-forward pulls
 - Local overrides such as API keys belong in `services.local.json` (copy from `services.local.example.json`)
+- `bootstrap.ps1` / `bootstrap.sh` is the preferred first-run entrypoint
+- `up.ps1` / `up.sh` is the normal day-to-day restart entrypoint once credentials exist
 
 ## Current Scope
 
@@ -134,6 +136,14 @@ Terminal login helpers are available for the managed external tools:
 
 - `login-wechat.ps1` / `login-wechat.sh` requests a QR code from the local `wechat-article-exporter` service, renders it in the terminal, waits for your scan confirmation, and stores the resulting `WECHAT_EXPORTER_API_KEY` in `services.local.json`
 - `login-xhs.ps1` / `login-xhs.sh` launches the managed `MediaCrawler` Xiaohongshu login flow, renders the QR code in the terminal, and stores the resulting cookie string in `services.local.json`
+
+Typical first-run flow:
+
+1. run `bootstrap.ps1` or `bootstrap.sh`
+2. scan the WeChat QR code if prompted
+3. scan the Xiaohongshu QR code if prompted
+4. wait for credentials to be written to `services.local.json`
+5. let the script finish bringing the full stack online
 
 The managed launcher now checks for:
 
