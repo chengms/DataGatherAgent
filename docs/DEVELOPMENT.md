@@ -81,6 +81,22 @@ Recommended defaults:
 - Keep workflow request and response shapes aligned with `app/schemas/workflow.py`
 - Use app-level exceptions from `app/core/exceptions.py` when domain errors need explicit API responses
 
+## External Crawler Integration
+
+Use `app/adapters/external_tool.py` for mature third-party crawler repositories.
+
+The intended pattern is:
+
+1. keep the external crawler in its own managed checkout under `backend/external_tools/` or point to it with an environment variable
+2. implement an `ExternalDiscoveryAdapter` or `ExternalFetchAdapter`
+3. convert command output into `DiscoveryCandidate` and `FetchedArticle`
+4. keep repository update flow separate from the main app code so upstream updates remain manageable
+
+Current scaffolded repository env vars:
+
+- `DATA_GATHER_WECHAT_EXPORTER_DIR`
+- `DATA_GATHER_XHS_CRAWLER_DIR`
+
 ## Validation Checklist
 
 1. Run monitored tests with `test-watch.ps1` or `test-watch.sh`

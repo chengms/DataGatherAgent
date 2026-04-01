@@ -1,4 +1,8 @@
 from app.adapters.base import BaseDiscoveryAdapter, BaseFetchAdapter
+from app.adapters.external_tool import (
+    StubWechatExporterDiscoveryAdapter,
+    StubXiaohongshuDiscoveryAdapter,
+)
 from app.adapters.mock_wechat_clean import MockWechatFetchAdapter, MockWechatSearchAdapter
 from app.adapters.web_fetch_live import WebFetchWechatAdapter
 from app.adapters.web_search_live import WebSearchWechatAdapter
@@ -10,6 +14,8 @@ class AdapterRegistry:
         self._discovery: dict[str, BaseDiscoveryAdapter] = {
             "mock_wechat_search": MockWechatSearchAdapter(),
             "web_search_wechat": WebSearchWechatAdapter(),
+            "wechat_exporter_search": StubWechatExporterDiscoveryAdapter(),
+            "xiaohongshu_external_search": StubXiaohongshuDiscoveryAdapter(),
         }
         self._fetch: dict[str, BaseFetchAdapter] = {
             "mock_wechat_fetch": MockWechatFetchAdapter(),

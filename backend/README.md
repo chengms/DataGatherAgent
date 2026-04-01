@@ -63,6 +63,18 @@ This MVP implements the workflow skeleton:
 
 Current adapters are mock implementations so the workflow can run end to end before integrating real WeChat search and article crawlers.
 
+The adapter layer now supports two integration modes:
+
+- in-process adapters, such as the current mock and lightweight web adapters
+- external-tool adapters, which are designed to call mature crawler repositories from a managed checkout on disk
+
+Scaffolded external discovery adapters are already registered for:
+
+- `wechat_exporter_search`
+- `xiaohongshu_external_search`
+
+These are not wired to a concrete command yet, but they establish the contract for integrating and later updating third-party crawler repositories without mixing their code into the main app package.
+
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
 
 Available discovery sources:
