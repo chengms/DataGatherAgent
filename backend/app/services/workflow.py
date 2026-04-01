@@ -1,4 +1,5 @@
 from app.db.init_db import ensure_db_initialized
+from app.adapters.web_fetch_live import FetchRequestError
 from app.adapters.web_search_live import SearchRequestError
 from app.schemas.workflow import (
     DiscoveryCandidate,
@@ -18,7 +19,7 @@ class WorkflowService:
         ensure_db_initialized()
         job_id = workflow_repository.create_job(payload)
         discovery_adapter = adapter_registry.get_discovery(payload.discovery_source)
-        fetch_adapter = adapter_registry.get_fetch(payload.platform)
+        fetch_adapter = adapter_registry.get_fetch(payload.fetch_source)
 
         discovery_candidates: list[DiscoveryCandidate] = []
         for keyword in payload.keywords:
@@ -36,7 +37,12 @@ class WorkflowService:
 
         fetched_articles: list[FetchedArticle] = []
         for candidate in discovery_candidates:
-            raw_article = fetch_adapter.fetch(candidate.model_dump())
+            try:
+                raw_article = fetch_adapter.fetch(candidate.model_dump())
+            except FetchRequestError:
+                if not payload.fallback_to_mock:
+                    raise
+                raw_article = adapter_registry.get_fetch("mock_wechat_fetch").fetch(candidate.model_dump())
             fetched_articles.append(FetchedArticle.model_validate(raw_article))
         workflow_repository.save_fetched_articles(job_id, fetched_articles)
 

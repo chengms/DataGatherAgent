@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS workflow_job (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     platform TEXT NOT NULL,
     discovery_source TEXT NOT NULL,
+    fetch_source TEXT NOT NULL DEFAULT 'mock_wechat_fetch',
     keywords_json TEXT NOT NULL,
     limit_count INTEGER NOT NULL,
     top_k INTEGER NOT NULL,
@@ -71,6 +72,11 @@ CREATE TABLE IF NOT EXISTS ranked_article (
 def init_db() -> None:
     with db_cursor() as (_, cursor):
         cursor.executescript(SCHEMA_SQL)
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(workflow_job)").fetchall()}
+        if "fetch_source" not in columns:
+            cursor.execute(
+                "ALTER TABLE workflow_job ADD COLUMN fetch_source TEXT NOT NULL DEFAULT 'mock_wechat_fetch'"
+            )
 
 
 _initialized = False

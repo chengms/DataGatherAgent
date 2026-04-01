@@ -12,6 +12,7 @@ class WorkflowPreviewRequest(BaseModel):
     keywords: list[str] = Field(min_length=1)
     platform: str = "wechat"
     discovery_source: str = "mock_wechat_search"
+    fetch_source: str = "mock_wechat_fetch"
     limit: int = Field(default=10, ge=1, le=100)
     top_k: int = Field(default=10, ge=1, le=50)
     time_window_days: int = Field(default=7, ge=1, le=30)
@@ -72,6 +73,7 @@ class WorkflowJobSummary(BaseModel):
     id: int
     platform: str
     discovery_source: str
+    fetch_source: str
     keywords_json: str
     status: str
     created_at: str

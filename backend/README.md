@@ -10,6 +10,11 @@ pip install -e .
 uvicorn app.main:app --reload
 ```
 
+Quick launchers:
+
+- Windows PowerShell: `./start.ps1`
+- Linux/macOS/WSL: `./start.sh`
+
 ## API
 
 - `GET /health`
@@ -29,6 +34,16 @@ This MVP implements the workflow skeleton:
 5. hot article ranking
 
 Current adapters are mock implementations so the workflow can run end to end before integrating real WeChat search and article crawlers.
+
+Available discovery sources:
+
+- `mock_wechat_search`
+- `web_search_wechat`
+
+Available fetch sources:
+
+- `mock_wechat_fetch`
+- `web_fetch_wechat`
 
 Workflow executions are persisted to SQLite.
 

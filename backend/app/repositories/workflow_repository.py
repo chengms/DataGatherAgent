@@ -14,17 +14,19 @@ class WorkflowRepository:
                 INSERT INTO workflow_job (
                     platform,
                     discovery_source,
+                    fetch_source,
                     keywords_json,
                     limit_count,
                     top_k,
                     time_window_days,
                     status,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.platform,
                     payload.discovery_source,
+                    payload.fetch_source,
                     json.dumps(payload.keywords, ensure_ascii=False),
                     payload.limit,
                     payload.top_k,
@@ -139,7 +141,7 @@ class WorkflowRepository:
         with db_cursor() as (_, cursor):
             rows = cursor.execute(
                 """
-                SELECT id, platform, discovery_source, keywords_json, status, created_at, finished_at,
+                SELECT id, platform, discovery_source, fetch_source, keywords_json, status, created_at, finished_at,
                        discovered_count, fetched_count, ranked_count
                 FROM workflow_job
                 ORDER BY id DESC
@@ -163,4 +165,3 @@ class WorkflowRepository:
 
 
 workflow_repository = WorkflowRepository()
-
