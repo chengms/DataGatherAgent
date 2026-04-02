@@ -58,7 +58,7 @@ def request_bytes(opener: urllib.request.OpenerDirector, url: str) -> bytes:
         return response.read()
 
 
-def fetch_debug_store(opener: urllib.request.OpenerDirector, base_url: str, debug_key: str) -> dict[str, dict]:
+def fetch_debug_store(opener: urllib.request.OpenerDirector, base_url: str, debug_key: str) -> dict[str, dict] | None:
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/_debug?key={urllib.parse.quote(debug_key)}",
         method="GET",
@@ -68,10 +68,10 @@ def fetch_debug_store(opener: urllib.request.OpenerDirector, base_url: str, debu
     try:
         payload = json.loads(raw)
     except ValueError:
-        return {}
+        return None
     if isinstance(payload, dict):
         return {str(key): value for key, value in payload.items() if isinstance(value, dict) and "token" in value}
-    return {}
+    return None
 
 
 def get_cookie_value(opener: urllib.request.OpenerDirector, name: str) -> str | None:
@@ -99,7 +99,12 @@ def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float,
     opener = build_opener()
     base_url = base_url.rstrip("/")
     sid = f"{int(time.time() * 1000)}{secrets.randbelow(1000):03d}"
-    known_auth_keys = set(fetch_debug_store(opener, base_url, debug_key).keys())
+    initial_store = fetch_debug_store(opener, base_url, debug_key)
+    if initial_store is None:
+        raise RuntimeError(
+            "wechat exporter debug store is unavailable. Restart the service with DEBUG_KEY configured, then retry login."
+        )
+    known_auth_keys = set(initial_store.keys())
 
     start = request_json(
         opener,
@@ -145,6 +150,10 @@ def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float,
                 raise RuntimeError("The WeChat account is not eligible for public account login.")
         else:
             current_store = fetch_debug_store(opener, base_url, debug_key)
+            if current_store is None:
+                raise RuntimeError(
+                    "wechat exporter debug store is unavailable. Restart the service with DEBUG_KEY configured, then retry login."
+                )
             new_auth_keys = [key for key in current_store if key not in known_auth_keys]
             if new_auth_keys:
                 auth_key = new_auth_keys[-1]
@@ -164,10 +173,6 @@ def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float,
                     flush=True,
                 )
                 return 0
-            if not current_store:
-                raise RuntimeError(
-                    "wechat exporter debug store is unavailable. Restart the service with DEBUG_KEY configured, then retry login."
-                )
         time.sleep(poll_seconds)
     else:
         raise RuntimeError("wechat QR login timed out")
