@@ -6,6 +6,7 @@
       "repo_url": "git@github.com:wechat-article/wechat-article-exporter.git",
       "branch": "master",
       "repo_dir": "external_tools/wechat-article-exporter",
+      "generated_paths": [".nuxt", "node_modules/.cache"],
       "requires": ["git", "corepack", "node"],
       "required_env": ["WECHAT_EXPORTER_API_KEY"],
       "env": {
@@ -21,6 +22,7 @@
       "repo_url": "git@github.com:NanmiCoder/MediaCrawler.git",
       "branch": "main",
       "repo_dir": "external_tools/MediaCrawler",
+      "generated_paths": [".codex-login-output"],
       "requires": ["git", "uv", "node"],
       "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
       "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],

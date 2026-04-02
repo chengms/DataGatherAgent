@@ -33,6 +33,7 @@ Thumbs.db
 
 # Local runtime data
 backend/data/
+browser_data/
 *.sqlite3
 *.db
 *.db-journal

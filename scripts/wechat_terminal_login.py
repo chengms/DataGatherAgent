@@ -95,6 +95,20 @@ def ensure_authkey_valid(opener: urllib.request.OpenerDirector, base_url: str, a
         raise RuntimeError(f"wechat exporter auth-key validation failed: {payload}")
 
 
+def select_valid_auth_key(
+    opener: urllib.request.OpenerDirector,
+    base_url: str,
+    store: dict[str, dict],
+) -> str | None:
+    for auth_key in reversed(list(store.keys())):
+        try:
+            ensure_authkey_valid(opener, base_url, auth_key)
+            return auth_key
+        except Exception:
+            continue
+    return None
+
+
 def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float, timeout_seconds: int) -> int:
     opener = build_opener()
     base_url = base_url.rstrip("/")
@@ -104,6 +118,23 @@ def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float,
         raise RuntimeError(
             "wechat exporter debug store is unavailable. Restart the service with DEBUG_KEY configured, then retry login."
         )
+    existing_auth_key = select_valid_auth_key(opener, base_url, initial_store)
+    if existing_auth_key:
+        set_global_env(save_env, existing_auth_key)
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "saved_env": save_env,
+                    "auth_key_prefix": existing_auth_key[:8],
+                    "base_url": base_url,
+                    "login_mode": "existing_session",
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        return 0
     known_auth_keys = set(initial_store.keys())
 
     start = request_json(

@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
         default="up",
     )
     parser.add_argument("--no-update", action="store_true", help="Skip pulling updates for clean managed repos.")
+    parser.add_argument("--skip-install", action="store_true", help="Skip install steps and only prepare/start services.")
     return parser.parse_args()
 
 
@@ -145,6 +146,52 @@ def git_output(args: list[str], cwd: Path) -> str:
     return completed.stdout.strip()
 
 
+def normalize_status_path(raw_path: str) -> str:
+    path = raw_path.strip()
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return path.strip().strip('"').replace("\\", "/")
+
+
+def is_generated_path(service: dict[str, Any], status_path: str) -> bool:
+    for rel_path in service.get("generated_paths", []):
+        normalized = str(Path(rel_path).as_posix()).rstrip("/")
+        if status_path == normalized or status_path.startswith(f"{normalized}/"):
+            return True
+    return False
+
+
+def filter_generated_status(service: dict[str, Any], status: str) -> str:
+    kept_lines: list[str] = []
+    for line in status.splitlines():
+        if len(line) < 4:
+            kept_lines.append(line)
+            continue
+        status_path = normalize_status_path(line[3:])
+        if is_generated_path(service, status_path):
+            continue
+        kept_lines.append(line)
+    return "\n".join(kept_lines).strip()
+
+
+def cleanup_generated_paths(service: dict[str, Any], repo_dir: Path) -> None:
+    for rel_path in service.get("generated_paths", []):
+        target = (repo_dir / rel_path).resolve()
+        try:
+            target.relative_to(repo_dir.resolve())
+        except ValueError as exc:
+            raise RuntimeError(f"generated path escapes managed repository: {target}") from exc
+        if not target.exists():
+            continue
+        try:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=False)
+            else:
+                target.unlink()
+        except OSError as exc:
+            log(f"skipping cleanup for locked generated path {target}: {exc}")
+
+
 def ensure_managed_repo(service: dict[str, Any], update: bool) -> Path:
     repo_dir = resolve_path(service["repo_dir"])
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +206,9 @@ def ensure_managed_repo(service: dict[str, Any], update: bool) -> Path:
     if not (repo_dir / ".git").exists():
         raise RuntimeError(f"{repo_dir} exists but is not a git repository")
 
-    status = git_output(["status", "--porcelain"], repo_dir)
+    cleanup_generated_paths(service, repo_dir)
+
+    status = filter_generated_status(service, git_output(["status", "--porcelain"], repo_dir))
     if status:
         raise RuntimeError(
             f"managed repository {repo_dir} is dirty; commit/stash/revert changes there before running updates"
@@ -200,6 +249,17 @@ def spawn_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> su
     return process
 
 
+def ensure_service_ready(service: dict[str, Any]) -> None:
+    ready_port = service.get("ready_port")
+    if ready_port:
+        wait_for_port(int(ready_port))
+        log(f"{service['name']} is ready on port {ready_port}")
+    healthcheck_url = service.get("healthcheck_url")
+    if healthcheck_url:
+        wait_for_healthcheck(str(healthcheck_url))
+        log(f"{service['name']} passed healthcheck {healthcheck_url}")
+
+
 def wait_for_port(port: int, timeout_seconds: int = 90) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -225,7 +285,14 @@ def wait_for_healthcheck(url: str, timeout_seconds: int = 90) -> None:
     raise RuntimeError(f"service healthcheck did not succeed within {timeout_seconds}s: {url}")
 
 
-def prepare_service(service: dict[str, Any], global_env: dict[str, Any], overrides: dict[str, Any], update: bool) -> tuple[Path, dict[str, str]]:
+def prepare_service(
+    service: dict[str, Any],
+    global_env: dict[str, Any],
+    overrides: dict[str, Any],
+    update: bool,
+    *,
+    skip_install: bool,
+) -> tuple[Path, dict[str, str]]:
     ensure_required_binaries(service)
     if service["kind"] == "managed_repo":
         cwd = ensure_managed_repo(service, update=update)
@@ -234,7 +301,7 @@ def prepare_service(service: dict[str, Any], global_env: dict[str, Any], overrid
     env = merged_env(service, global_env, overrides)
     ensure_required_env(service, env)
     install_command = service.get("install")
-    if install_command:
+    if install_command and not skip_install:
         if install_command and isinstance(install_command[0], list):
             for step in install_command:
                 run_command(step, cwd, env)
@@ -243,15 +310,15 @@ def prepare_service(service: dict[str, Any], global_env: dict[str, Any], overrid
     return cwd, env
 
 
-def command_ensure_repos(update: bool) -> None:
+def command_ensure_repos(update: bool, *, skip_install: bool) -> None:
     services, global_env, overrides = load_manifest()
     for service in services:
         if service["kind"] == "managed_repo":
-            prepare_service(service, global_env, overrides, update=update)
+            prepare_service(service, global_env, overrides, update=update, skip_install=skip_install)
     log("managed repositories are ready")
 
 
-def command_up(update: bool) -> None:
+def command_up(update: bool, *, skip_install: bool) -> None:
     services, global_env, overrides = load_manifest()
     prepared: list[tuple[dict[str, Any], Path, dict[str, str]]] = []
     for service in services:
@@ -260,22 +327,27 @@ def command_up(update: bool) -> None:
             raise RuntimeError(
                 f"{service['name']} cannot start because port {ready_port} is already in use"
             )
-        cwd, env = prepare_service(service, global_env, overrides, update=update)
+        cwd, env = prepare_service(service, global_env, overrides, update=update, skip_install=skip_install)
         prepared.append((service, cwd, env))
 
-    processes: list[tuple[dict[str, Any], subprocess.Popen[str]]] = []
+    start_prepared_services(prepared)
+
+
+def start_prepared_services(
+    prepared: list[tuple[dict[str, Any], Path, dict[str, str]]],
+    *,
+    existing_processes: list[tuple[dict[str, Any], subprocess.Popen[str]]] | None = None,
+) -> None:
+    processes: list[tuple[dict[str, Any], subprocess.Popen[str]]] = list(existing_processes or [])
+    started_names = {service["name"] for service, _ in processes}
     try:
         for service, cwd, env in prepared:
+            if service["name"] in started_names:
+                ensure_service_ready(service)
+                continue
             process = spawn_service(service, cwd, env)
             processes.append((service, process))
-            ready_port = service.get("ready_port")
-            if ready_port:
-                wait_for_port(int(ready_port))
-                log(f"{service['name']} is ready on port {ready_port}")
-            healthcheck_url = service.get("healthcheck_url")
-            if healthcheck_url:
-                wait_for_healthcheck(str(healthcheck_url))
-                log(f"{service['name']} passed healthcheck {healthcheck_url}")
+            ensure_service_ready(service)
 
         log("all services are running; press Ctrl+C to stop them")
         while True:
@@ -302,11 +374,11 @@ def main() -> int:
     args = parse_args()
     try:
         if args.command == "ensure-repos":
-            command_ensure_repos(update=not args.no_update)
+            command_ensure_repos(update=not args.no_update, skip_install=args.skip_install)
         elif args.command == "update-repos":
-            command_ensure_repos(update=True)
+            command_ensure_repos(update=True, skip_install=args.skip_install)
         else:
-            command_up(update=not args.no_update)
+            command_up(update=not args.no_update, skip_install=args.skip_install)
     except Exception as exc:
         log(str(exc))
         return 1
