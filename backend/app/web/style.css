@@ -126,11 +126,65 @@ label {
 
 .preview-form,
 .source-grid,
+.platform-status-grid,
 .summary-grid,
 .article-list,
 .job-list {
   display: grid;
   gap: 14px;
+}
+
+.platform-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.platform-section legend {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.platform-grid,
+.platform-status-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.platform-option {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 140px;
+  padding: 16px;
+  border: 1px solid rgba(31, 36, 48, 0.08);
+  border-radius: 20px;
+  background: var(--panel-strong);
+}
+
+.platform-option input {
+  width: auto;
+  margin: 0;
+}
+
+.platform-option-title {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.platform-option-desc,
+.platform-option-tag {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.platform-option.disabled {
+  opacity: 0.7;
 }
 
 label {
@@ -229,6 +283,10 @@ textarea {
   background: var(--panel-strong);
   border: 1px solid rgba(31, 36, 48, 0.08);
   padding: 16px;
+}
+
+.source-card.disabled {
+  opacity: 0.75;
 }
 
 .source-top,

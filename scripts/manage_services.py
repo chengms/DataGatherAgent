@@ -260,6 +260,88 @@ def ensure_service_ready(service: dict[str, Any]) -> None:
         log(f"{service['name']} passed healthcheck {healthcheck_url}")
 
 
+def notify_user(title: str, message: str) -> None:
+    log(f"{title}: {message}")
+    if os.name != "nt":
+        return
+    safe_message = message.replace("'", "''")
+    safe_title = title.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName PresentationFramework; "
+        f"[System.Windows.MessageBox]::Show('{safe_message}', '{safe_title}') | Out-Null"
+    )
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-Command", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def probe_healthcheck(url: str, timeout_seconds: int = 3) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_seconds) as response:
+            return 200 <= response.status < 300
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        return False
+
+
+def resolve_runtime_value(value: Any, env: dict[str, str]) -> Any:
+    if isinstance(value, str) and value.startswith("env:"):
+        return env.get(value[4:], "")
+    if isinstance(value, dict):
+        return {str(k): str(resolve_runtime_value(v, env)) for k, v in value.items()}
+    return value
+
+
+def extract_field(payload: Any, field_path: str) -> Any:
+    current = payload
+    for part in field_path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def run_login_check(service: dict[str, Any], env: dict[str, str]) -> tuple[bool, str]:
+    login_check = service.get("login_check")
+    if not login_check:
+        return True, "not_configured"
+
+    check_type = str(login_check.get("type", ""))
+    ok_field = str(login_check.get("ok_field", "ok"))
+    ok_equals = login_check.get("ok_equals", True)
+    if check_type == "command_json":
+        cwd = resolve_path(str(login_check.get("cwd", ".")))
+        argv = [str(resolve_runtime_value(item, env)) for item in login_check.get("argv", [])]
+        completed = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, check=False, timeout=120)
+        stdout = completed.stdout.strip() or "{}"
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return False, stdout[:200] or completed.stderr[:200] or "invalid_json"
+        result = extract_field(payload, ok_field)
+        reason = str(payload.get("reason") or "login_check_failed")
+        return result == ok_equals, reason
+
+    if check_type == "http_json":
+        url = str(resolve_runtime_value(login_check.get("url", ""), env))
+        request = urllib.request.Request(
+            url,
+            headers=resolve_runtime_value(login_check.get("headers", {}), env),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, json.JSONDecodeError):
+            return False, "service_unreachable"
+        result = extract_field(payload, ok_field)
+        reason = str(payload.get("reason") or payload.get("msg") or "login_check_failed")
+        return result == ok_equals, reason
+
+    return True, "unsupported_check_type"
+
+
 def wait_for_port(port: int, timeout_seconds: int = 90) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -333,6 +415,22 @@ def command_up(update: bool, *, skip_install: bool) -> None:
     start_prepared_services(prepared)
 
 
+def restart_service(
+    service: dict[str, Any],
+    cwd: Path,
+    env: dict[str, str],
+    processes: list[tuple[dict[str, Any], subprocess.Popen[str]]],
+    index: int,
+) -> subprocess.Popen[str]:
+    delay_seconds = int(service.get("restart_delay_seconds", 5))
+    time.sleep(max(delay_seconds, 1))
+    process = spawn_service(service, cwd, env)
+    ensure_service_ready(service)
+    processes[index] = (service, process)
+    notify_user(service["name"], f"服务异常退出，已自动重启。")
+    return process
+
+
 def start_prepared_services(
     prepared: list[tuple[dict[str, Any], Path, dict[str, str]]],
     *,
@@ -340,6 +438,11 @@ def start_prepared_services(
 ) -> None:
     processes: list[tuple[dict[str, Any], subprocess.Popen[str]]] = list(existing_processes or [])
     started_names = {service["name"] for service, _ in processes}
+    process_context = {service["name"]: (cwd, env) for service, cwd, env in prepared}
+    health_failures = {service["name"]: 0 for service, _, _ in prepared}
+    next_health_check = {service["name"]: time.time() for service, _, _ in prepared}
+    next_login_check = {service["name"]: time.time() for service, _, _ in prepared}
+    last_login_alert = {service["name"]: 0.0 for service, _, _ in prepared}
     try:
         for service, cwd, env in prepared:
             if service["name"] in started_names:
@@ -351,10 +454,53 @@ def start_prepared_services(
 
         log("all services are running; press Ctrl+C to stop them")
         while True:
-            for service, process in processes:
+            for index, (service, process) in enumerate(list(processes)):
                 exit_code = process.poll()
                 if exit_code is not None:
-                    raise RuntimeError(f"{service['name']} exited unexpectedly with code {exit_code}")
+                    cwd, env = process_context[service["name"]]
+                    log(f"{service['name']} exited unexpectedly with code {exit_code}, restarting")
+                    restart_service(service, cwd, env, processes, index)
+                    health_failures[service["name"]] = 0
+                    next_health_check[service["name"]] = time.time() + int(service.get("healthcheck_interval_seconds", 30))
+                    next_login_check[service["name"]] = time.time() + int(service.get("login_check", {}).get("interval_seconds", 120))
+                    continue
+
+                healthcheck_url = service.get("healthcheck_url")
+                health_interval = int(service.get("healthcheck_interval_seconds", 30))
+                if healthcheck_url and time.time() >= next_health_check[service["name"]]:
+                    if probe_healthcheck(str(healthcheck_url)):
+                        health_failures[service["name"]] = 0
+                    else:
+                        health_failures[service["name"]] += 1
+                        threshold = int(service.get("healthcheck_failure_threshold", 3))
+                        log(
+                            f"{service['name']} healthcheck failed ({health_failures[service['name']]}/{threshold}): {healthcheck_url}"
+                        )
+                        if health_failures[service["name"]] >= threshold:
+                            cwd, env = process_context[service["name"]]
+                            if process.poll() is None:
+                                process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+                                try:
+                                    process.wait(timeout=10)
+                                except subprocess.TimeoutExpired:
+                                    process.kill()
+                            restart_service(service, cwd, env, processes, index)
+                            health_failures[service["name"]] = 0
+                    next_health_check[service["name"]] = time.time() + health_interval
+
+                login_check = service.get("login_check")
+                if login_check and time.time() >= next_login_check[service["name"]]:
+                    cwd, env = process_context[service["name"]]
+                    ok, reason = run_login_check(service, env)
+                    if not ok:
+                        cooldown = int(login_check.get("cooldown_seconds", 300))
+                        if time.time() - last_login_alert[service["name"]] >= cooldown:
+                            notify_user(
+                                f"{service['name']} 登录状态异常",
+                                str(login_check.get("message") or f"登录状态异常: {reason}"),
+                            )
+                            last_login_alert[service["name"]] = time.time()
+                    next_login_check[service["name"]] = time.time() + int(login_check.get("interval_seconds", 120))
             time.sleep(1)
     except KeyboardInterrupt:
         log("stopping services")

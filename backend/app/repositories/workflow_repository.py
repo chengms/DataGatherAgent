@@ -8,6 +8,9 @@ from app.schemas.workflow import DiscoveryCandidate, FetchedArticle, RankedArtic
 class WorkflowRepository:
     def create_job(self, payload: WorkflowPreviewRequest) -> int:
         created_at = datetime.now(UTC).isoformat()
+        selected_platforms = payload.selected_platforms()
+        discovery_source = payload.discovery_source or "auto"
+        fetch_source = payload.fetch_source or "auto"
         with db_cursor() as (_, cursor):
             cursor.execute(
                 """
@@ -24,9 +27,9 @@ class WorkflowRepository:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    payload.platform,
-                    payload.discovery_source,
-                    payload.fetch_source,
+                    ",".join(selected_platforms),
+                    discovery_source,
+                    fetch_source,
                     json.dumps(payload.keywords, ensure_ascii=False),
                     payload.limit,
                     payload.top_k,

@@ -11,13 +11,19 @@ class RankingWeights(BaseModel):
 class WorkflowPreviewRequest(BaseModel):
     keywords: list[str] = Field(min_length=1)
     platform: str = "wechat"
-    discovery_source: str = "mock_wechat_search"
-    fetch_source: str = "mock_wechat_fetch"
+    platforms: list[str] = Field(default_factory=lambda: ["wechat"], min_length=1)
+    discovery_source: str | None = None
+    fetch_source: str | None = None
     limit: int = Field(default=10, ge=1, le=100)
     top_k: int = Field(default=10, ge=1, le=50)
     time_window_days: int = Field(default=7, ge=1, le=30)
     fallback_to_mock: bool = True
     ranking: RankingWeights = Field(default_factory=RankingWeights)
+
+    def selected_platforms(self) -> list[str]:
+        if self.platforms:
+            return self.platforms
+        return [self.platform]
 
 
 class DiscoveryCandidate(BaseModel):
@@ -61,6 +67,7 @@ class RankedArticle(BaseModel):
 class WorkflowPreviewResponse(BaseModel):
     job_id: int | None = None
     keywords: list[str]
+    platforms: list[str] = Field(default_factory=list)
     discovered_count: int
     fetched_count: int
     ranked_count: int

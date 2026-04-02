@@ -37,33 +37,41 @@ async function requestJson(path, options = {}) {
 
 function renderSources() {
   elements.sourcesGrid.innerHTML = "";
-  const discovery = state.sources.filter((item) => item.kind === "search");
-  const fetchers = state.sources.filter((item) => item.kind === "fetch");
-  const ordered = [...discovery, ...fetchers];
-
-  for (const source of ordered) {
-    const fragment = elements.sourceCardTemplate.content.cloneNode(true);
-    const pill = fragment.querySelector(".pill");
-    const kind = fragment.querySelector(".kind");
-    const title = fragment.querySelector("h3");
-    const description = fragment.querySelector("p");
-
-    pill.textContent = source.live ? "在线" : "模拟";
-    pill.classList.toggle("offline", !source.live);
-    kind.textContent = source.kind === "search" ? "发现" : "抓取";
-    title.textContent = source.name;
-    description.textContent = source.description;
-    elements.sourcesGrid.appendChild(fragment);
+  elements.sourcesGrid.className = "platform-status-grid";
+  const capabilityMap = new Map();
+  for (const source of state.sources) {
+    if (!capabilityMap.has(source.platform)) {
+      capabilityMap.set(source.platform, { search: false, fetch: false, live: false });
+    }
+    const current = capabilityMap.get(source.platform);
+    current[source.kind] = true;
+    current.live = current.live || source.live;
   }
+
+  elements.sourcesGrid.innerHTML = PLATFORM_OPTIONS.map((platform) => {
+    const capability = capabilityMap.get(platform.key);
+    const ready = Boolean(capability?.search && capability?.fetch && platform.supported);
+    const live = Boolean(capability?.live);
+    return `
+      <article class="source-card${platform.supported ? "" : " disabled"}">
+        <div class="source-top">
+          <span class="pill ${ready ? "" : "offline"}">${ready ? "可用" : (platform.supported ? "未就绪" : "即将支持")}</span>
+          <span class="kind">${platform.label}</span>
+        </div>
+        <h3>${platform.label}</h3>
+        <p>${platform.description}</p>
+        <p>${ready ? (live ? "当前优先走在线采集链路" : "当前仅有本地或模拟能力") : "当前不会加入预览请求"}</p>
+      </article>
+    `;
+  }).join("");
 
   syncSourceSelectors();
 }
 
 function syncSourceSelectors() {
-  const discoverySources = state.sources.filter((item) => item.kind === "search");
-  const fetchSources = state.sources.filter((item) => item.kind === "fetch");
-  fillSelect(elements.discoverySource, discoverySources, "mock_wechat_search");
-  fillSelect(elements.fetchSource, fetchSources, "mock_wechat_fetch");
+  if (elements.discoverySource?.closest(".two-up")) {
+    elements.discoverySource.closest(".two-up").remove();
+  }
 }
 
 function fillSelect(select, options, preferredValue) {
@@ -93,7 +101,8 @@ function renderPreview() {
     return;
   }
 
-  elements.latestPreviewMeta.textContent = `任务 #${preview.job_id}，共 ${preview.keywords.length} 个关键词`;
+  const platforms = preview.platforms?.length ? preview.platforms.map(localizePlatform).join(" / ") : "";
+  elements.latestPreviewMeta.textContent = `任务 #${preview.job_id}，共 ${preview.keywords.length} 个关键词${platforms ? `，平台：${platforms}` : ""}`;
   const metrics = [
     ["已发现", preview.discovered_count],
     ["已抓取", preview.fetched_count],
@@ -121,7 +130,7 @@ function renderPreview() {
         <span>${Number(article.total_score).toFixed(4)}</span>
       </div>
       <h3>${escapeHtml(article.title)}</h3>
-      <p>${escapeHtml(article.account_name)} · 阅读 ${article.read_count} · 评论 ${article.comment_count}</p>
+      <p>${escapeHtml(localizePlatform(article.platform || ""))} · ${escapeHtml(article.account_name)} · 阅读 ${article.read_count} · 评论 ${article.comment_count}</p>
       <p>${escapeHtml(article.score_reason)}</p>
       <p><a href="${escapeAttribute(article.source_url)}" target="_blank" rel="noreferrer">打开原文</a></p>
     </article>
@@ -156,6 +165,7 @@ function renderJobs() {
       state.lastPreview = {
         job_id: detail.job.id,
         keywords: safeParseKeywords(detail.job.keywords_json),
+        platforms: String(detail.job.platform || "").split(",").filter(Boolean),
         discovered_count: detail.job.discovered_count,
         fetched_count: detail.job.fetched_count,
         ranked_count: detail.job.ranked_count,
@@ -183,8 +193,14 @@ function localizePlatform(platform) {
   const mapping = {
     wechat: "公众号",
     xiaohongshu: "小红书",
+    weibo: "微博",
+    zhihu: "知乎",
+    bilibili: "B站",
   };
-  return mapping[platform] || platform;
+  return String(platform)
+    .split(",")
+    .map((item) => mapping[item] || item)
+    .join(" / ");
 }
 
 function localizeJobStatus(status) {
@@ -224,9 +240,15 @@ async function runPreview(event) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+  const platforms = Array.from(document.querySelectorAll('input[name="platform-option"]:checked'))
+    .map((input) => input.value);
 
   if (!keywords.length) {
     setStatus("请至少输入一个关键词。", "error");
+    return;
+  }
+  if (!platforms.length) {
+    setStatus("请至少勾选一个已接入平台。", "error");
     return;
   }
 
@@ -236,8 +258,7 @@ async function runPreview(event) {
   try {
     const payload = {
       keywords,
-      discovery_source: elements.discoverySource.value,
-      fetch_source: elements.fetchSource.value,
+      platforms,
       limit: Number(elements.limitInput.value),
       top_k: Number(elements.topKInput.value),
       fallback_to_mock: elements.fallbackInput.checked,
@@ -271,6 +292,58 @@ function escapeAttribute(value) {
 }
 
 async function bootstrap() {
+  const heroEyebrow = document.querySelector(".eyebrow");
+  const heroTitle = document.querySelector(".hero h1");
+  const heroText = document.querySelector(".hero-text");
+  if (heroEyebrow) {
+    heroEyebrow.textContent = "工作流控制台";
+  }
+  if (heroTitle) {
+    heroTitle.textContent = "按平台勾选采集范围，统一运行对应爬取策略。";
+  }
+  if (heroText) {
+    heroText.textContent = "界面不再暴露测试用 adapter。你只需要勾选平台、填写关键词，然后由后端自动选择对应的平台采集链路。";
+  }
+  if (elements.refreshSourcesButton) {
+    elements.refreshSourcesButton.textContent = "刷新平台状态";
+  }
+  if (elements.refreshJobsButton) {
+    elements.refreshJobsButton.textContent = "刷新任务";
+  }
+  const sourcePanel = elements.sourcesGrid?.closest(".panel");
+  const sourcePanelTitle = sourcePanel?.querySelector(".panel-head h2");
+  if (sourcePanelTitle) {
+    sourcePanelTitle.textContent = "平台状态";
+  }
+  if (elements.keywordsInput?.closest("label")) {
+    const keywordsLabel = elements.keywordsInput.closest("label");
+    const textNode = keywordsLabel.childNodes[0];
+    if (textNode) {
+      textNode.textContent = "关键词";
+    }
+    const platformSection = document.createElement("fieldset");
+    platformSection.className = "platform-section";
+    platformSection.innerHTML = `
+      <legend>采集平台</legend>
+      <div class="platform-grid">
+        ${PLATFORM_OPTIONS.map((platform) => `
+          <label class="platform-option${platform.supported ? "" : " disabled"}">
+            <input
+              type="checkbox"
+              name="platform-option"
+              value="${platform.key}"
+              ${platform.key === "wechat" || platform.key === "xiaohongshu" ? "checked" : ""}
+              ${platform.supported ? "" : "disabled"}
+            >
+            <span class="platform-option-title">${platform.label}</span>
+            <span class="platform-option-desc">${platform.description}</span>
+            <span class="platform-option-tag">${platform.supported ? "已接入" : "即将支持"}</span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+    keywordsLabel.insertAdjacentElement("afterend", platformSection);
+  }
   elements.form.addEventListener("submit", runPreview);
   elements.refreshSourcesButton.addEventListener("click", loadSources);
   elements.refreshJobsButton.addEventListener("click", loadJobs);
@@ -279,4 +352,11 @@ async function bootstrap() {
   renderPreview();
 }
 
+const PLATFORM_OPTIONS = [
+  { key: "wechat", label: "公众号", description: "微信公众号文章发现与抓取", supported: true },
+  { key: "xiaohongshu", label: "小红书", description: "小红书笔记发现与详情抓取", supported: true },
+  { key: "weibo", label: "微博", description: "微博热点与内容抓取，后续接入", supported: false },
+  { key: "zhihu", label: "知乎", description: "知乎热门回答与专栏，后续接入", supported: false },
+  { key: "bilibili", label: "B站", description: "B站热门视频与动态，后续接入", supported: false },
+];
 bootstrap();

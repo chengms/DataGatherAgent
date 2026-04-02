@@ -12,6 +12,19 @@
       "env": {
         "DEBUG_KEY": "data-gather-agent-wechat-debug"
       },
+      "restart_delay_seconds": 5,
+      "healthcheck_interval_seconds": 30,
+      "healthcheck_failure_threshold": 3,
+      "login_check": {
+        "type": "command_json",
+        "argv": ["python", "scripts/wechat_login_status.py"],
+        "cwd": ".",
+        "ok_field": "ok",
+        "ok_equals": true,
+        "interval_seconds": 120,
+        "cooldown_seconds": 300,
+        "message": "微信公众号登录已过期，请重新运行 .\\login-wechat.ps1 扫码登录。"
+      },
       "install": ["corepack", "yarn", "install", "--frozen-lockfile"],
       "start": ["corepack", "yarn", "dev", "--host", "0.0.0.0", "--port", "3000"],
       "ready_port": 3000
@@ -24,6 +37,19 @@
       "repo_dir": "external_tools/MediaCrawler",
       "generated_paths": [".codex-login-output"],
       "requires": ["git", "uv", "node"],
+      "restart_delay_seconds": 5,
+      "healthcheck_interval_seconds": 30,
+      "healthcheck_failure_threshold": 3,
+      "login_check": {
+        "type": "command_json",
+        "argv": ["python", "scripts/xhs_login_status.py"],
+        "cwd": ".",
+        "ok_field": "ok",
+        "ok_equals": true,
+        "interval_seconds": 300,
+        "cooldown_seconds": 300,
+        "message": "小红书登录已过期，请重新运行 .\\login-xhs.ps1 完成登录。"
+      },
       "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
       "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
       "ready_port": 8080,
@@ -34,6 +60,9 @@
       "kind": "internal",
       "cwd": "backend",
       "requires": ["python"],
+      "restart_delay_seconds": 3,
+      "healthcheck_interval_seconds": 30,
+      "healthcheck_failure_threshold": 3,
       "install": ["python", "-m", "pip", "install", "-e", "."],
       "start": ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
       "env": {

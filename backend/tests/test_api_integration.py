@@ -120,13 +120,13 @@ class ApiIntegrationTests(unittest.TestCase):
             "/api/workflows/preview",
             {
                 "keywords": ["AI Agent", "Semiconductor"],
-                "discovery_source": "mock_wechat_search",
-                "fetch_source": "mock_wechat_fetch",
+                "platforms": ["wechat"],
                 "limit": 3,
                 "top_k": 2,
                 "fallback_to_mock": True,
             },
         )
+        self.assertEqual(preview["platforms"], ["wechat"])
         self.assertEqual(preview["discovered_count"], 6)
         self.assertEqual(preview["fetched_count"], 6)
         self.assertEqual(preview["ranked_count"], 2)

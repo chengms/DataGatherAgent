@@ -42,10 +42,35 @@ class ManageServicesTests(unittest.TestCase):
         with patch("manage_services.ensure_required_binaries"), patch(
             "manage_services.ensure_required_env"
         ), patch("manage_services.run_command") as run_command:
-            manage_services.prepare_service(service, {}, {}, update=False)
+            manage_services.prepare_service(service, {}, {}, update=False, skip_install=False)
         self.assertEqual(run_command.call_count, 2)
         self.assertEqual(run_command.call_args_list[0].args[0], ["uv", "sync"])
         self.assertEqual(run_command.call_args_list[1].args[0], ["uv", "run", "playwright", "install"])
+
+    def test_prepare_service_can_skip_install(self) -> None:
+        service = {"name": "backend", "kind": "internal", "cwd": ".", "install": ["python", "-m", "pip", "install", "-e", "."]}
+        with patch("manage_services.ensure_required_binaries"), patch(
+            "manage_services.ensure_required_env"
+        ), patch("manage_services.run_command") as run_command:
+            manage_services.prepare_service(service, {}, {}, update=False, skip_install=True)
+        run_command.assert_not_called()
+
+    def test_run_login_check_reads_command_json_payload(self) -> None:
+        service = {
+            "name": "wechat_exporter",
+            "login_check": {
+                "type": "command_json",
+                "argv": ["python", "scripts/wechat_login_status.py"],
+                "cwd": ".",
+                "ok_field": "ok",
+                "ok_equals": True,
+            },
+        }
+        completed = type("Completed", (), {"stdout": '{"ok": true, "reason": "ok"}', "stderr": "", "returncode": 0})()
+        with patch("manage_services.subprocess.run", return_value=completed):
+            ok, reason = manage_services.run_login_check(service, {})
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
 
 
 if __name__ == "__main__":
