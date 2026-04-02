@@ -4,7 +4,9 @@
   },
   "services": {
     "wechat_exporter": {
-      "env": {}
+      "env": {
+        "DEBUG_KEY": "data-gather-agent-wechat-debug"
+      }
     },
     "mediacrawler_xhs": {
       "env": {

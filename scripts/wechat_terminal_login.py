@@ -8,8 +8,8 @@ import http.cookiejar
 import json
 import secrets
 import time
-import urllib.error
 import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -18,12 +18,14 @@ from terminal_qr import render_terminal_qr
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:3000"
+DEFAULT_DEBUG_KEY = "data-gather-agent-wechat-debug"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Log into the managed wechat-article-exporter service from the terminal.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--save-env", default="WECHAT_EXPORTER_API_KEY")
+    parser.add_argument("--debug-key", default=DEFAULT_DEBUG_KEY)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--timeout-seconds", type=int, default=180)
     return parser.parse_args()
@@ -56,6 +58,22 @@ def request_bytes(opener: urllib.request.OpenerDirector, url: str) -> bytes:
         return response.read()
 
 
+def fetch_debug_store(opener: urllib.request.OpenerDirector, base_url: str, debug_key: str) -> dict[str, dict]:
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/api/_debug?key={urllib.parse.quote(debug_key)}",
+        method="GET",
+    )
+    with opener.open(request, timeout=30) as response:
+        raw = response.read().decode("utf-8")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return {}
+    if isinstance(payload, dict):
+        return {str(key): value for key, value in payload.items() if isinstance(value, dict) and "token" in value}
+    return {}
+
+
 def get_cookie_value(opener: urllib.request.OpenerDirector, name: str) -> str | None:
     for handler in opener.handlers:
         if isinstance(handler, urllib.request.HTTPCookieProcessor):
@@ -77,10 +95,11 @@ def ensure_authkey_valid(opener: urllib.request.OpenerDirector, base_url: str, a
         raise RuntimeError(f"wechat exporter auth-key validation failed: {payload}")
 
 
-def run_login(base_url: str, save_env: str, poll_seconds: float, timeout_seconds: int) -> int:
+def run_login(base_url: str, save_env: str, debug_key: str, poll_seconds: float, timeout_seconds: int) -> int:
     opener = build_opener()
     base_url = base_url.rstrip("/")
     sid = f"{int(time.time() * 1000)}{secrets.randbelow(1000):03d}"
+    known_auth_keys = set(fetch_debug_store(opener, base_url, debug_key).keys())
 
     start = request_json(
         opener,
@@ -91,23 +110,64 @@ def run_login(base_url: str, save_env: str, poll_seconds: float, timeout_seconds
         raise RuntimeError(f"unable to start wechat login session: {start}")
 
     qrcode_bytes = request_bytes(opener, f"{base_url}/api/web/login/getqrcode?rnd={time.time()}")
-    render_terminal_qr(qrcode_bytes, "Scan this QR code with WeChat Official Accounts:")
+    try:
+        render_terminal_qr(qrcode_bytes, "Scan this QR code with WeChat Official Accounts:")
+        login_mode = "session_qr"
+    except Exception:
+        login_mode = "browser_qr"
+        print(
+            f"Terminal QR rendering is unavailable. Open {base_url}/dashboard/account and use the page login QR code.",
+            flush=True,
+        )
 
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        status_payload = request_json(opener, f"{base_url}/api/web/login/scan")
-        if status_payload.get("base_resp", {}).get("ret") != 0:
-            raise RuntimeError(f"wechat login status request failed: {status_payload}")
-        status = status_payload.get("status")
-        if status == 1:
-            break
-        if status in {4, 6}:
-            print("Scan detected. Confirm the login in WeChat.", flush=True)
-        elif status in {2, 3}:
-            qrcode_bytes = request_bytes(opener, f"{base_url}/api/web/login/getqrcode?rnd={time.time()}")
-            render_terminal_qr(qrcode_bytes, "WeChat QR code refreshed. Scan again:")
-        elif status == 5:
-            raise RuntimeError("The WeChat account is not eligible for public account login.")
+        if login_mode == "session_qr":
+            status_payload = request_json(opener, f"{base_url}/api/web/login/scan")
+            if status_payload.get("base_resp", {}).get("ret") != 0:
+                raise RuntimeError(f"wechat login status request failed: {status_payload}")
+            status = status_payload.get("status")
+            if status == 1:
+                break
+            if status in {4, 6}:
+                print("Scan detected. Confirm the login in WeChat.", flush=True)
+            elif status in {2, 3}:
+                qrcode_bytes = request_bytes(opener, f"{base_url}/api/web/login/getqrcode?rnd={time.time()}")
+                try:
+                    render_terminal_qr(qrcode_bytes, "WeChat QR code refreshed. Scan again:")
+                except Exception:
+                    print(
+                        f"QR refresh is available on {base_url}/dashboard/account .",
+                        flush=True,
+                    )
+                    login_mode = "browser_qr"
+            elif status == 5:
+                raise RuntimeError("The WeChat account is not eligible for public account login.")
+        else:
+            current_store = fetch_debug_store(opener, base_url, debug_key)
+            new_auth_keys = [key for key in current_store if key not in known_auth_keys]
+            if new_auth_keys:
+                auth_key = new_auth_keys[-1]
+                ensure_authkey_valid(opener, base_url, auth_key)
+                set_global_env(save_env, auth_key)
+                print(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "saved_env": save_env,
+                            "auth_key_prefix": auth_key[:8],
+                            "base_url": base_url,
+                            "login_mode": login_mode,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                return 0
+            if not current_store:
+                raise RuntimeError(
+                    "wechat exporter debug store is unavailable. Restart the service with DEBUG_KEY configured, then retry login."
+                )
         time.sleep(poll_seconds)
     else:
         raise RuntimeError("wechat QR login timed out")
@@ -133,6 +193,7 @@ def run_login(base_url: str, save_env: str, poll_seconds: float, timeout_seconds
                 "saved_env": save_env,
                 "auth_key_prefix": auth_key[:8],
                 "base_url": base_url,
+                "login_mode": login_mode,
             },
             ensure_ascii=False,
         ),
@@ -146,6 +207,7 @@ def main() -> int:
     return run_login(
         base_url=args.base_url,
         save_env=args.save_env,
+        debug_key=args.debug_key,
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
     )

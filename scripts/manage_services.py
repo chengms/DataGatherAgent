@@ -103,7 +103,29 @@ def is_port_in_use(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def resolve_command(command: list[str]) -> list[str]:
+    if not command:
+        return command
+
+    executable = command[0]
+    resolved = shutil.which(executable)
+    if resolved:
+        resolved_path = Path(resolved)
+        if os.name == "nt" and resolved_path.suffix.lower() == "":
+            for suffix in (".cmd", ".exe", ".bat"):
+                candidate = Path(f"{resolved}{suffix}")
+                if candidate.exists():
+                    command = [str(candidate), *command[1:]]
+                    break
+            else:
+                command = [resolved, *command[1:]]
+        else:
+            command = [resolved, *command[1:]]
+    return command
+
+
 def run_command(command: list[str], cwd: Path, env: dict[str, str]) -> None:
+    command = resolve_command(command)
     log(f"running {shlex.join(command)} in {cwd}")
     completed = subprocess.run(command, cwd=cwd, env=env, check=False)
     if completed.returncode != 0:
@@ -162,7 +184,7 @@ def stream_output(pipe, prefix: str) -> None:
 
 
 def spawn_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> subprocess.Popen[str]:
-    command = service["start"]
+    command = resolve_command(service["start"])
     log(f"starting {service['name']}: {shlex.join(command)}")
     process = subprocess.Popen(
         command,

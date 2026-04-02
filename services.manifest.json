@@ -8,6 +8,9 @@
       "repo_dir": "external_tools/wechat-article-exporter",
       "requires": ["git", "corepack", "node"],
       "required_env": ["WECHAT_EXPORTER_API_KEY"],
+      "env": {
+        "DEBUG_KEY": "data-gather-agent-wechat-debug"
+      },
       "install": ["corepack", "yarn", "install", "--frozen-lockfile"],
       "start": ["corepack", "yarn", "dev", "--host", "0.0.0.0", "--port", "3000"],
       "ready_port": 3000
