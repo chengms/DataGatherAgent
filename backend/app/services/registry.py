@@ -1,5 +1,11 @@
 from app.adapters.base import BaseDiscoveryAdapter, BaseFetchAdapter
 from app.adapters.external_tool import (
+    MediaCrawlerBilibiliDiscoveryAdapter,
+    MediaCrawlerBilibiliFetchAdapter,
+    MediaCrawlerDouyinDiscoveryAdapter,
+    MediaCrawlerDouyinFetchAdapter,
+    MediaCrawlerWeiboDiscoveryAdapter,
+    MediaCrawlerWeiboFetchAdapter,
     MediaCrawlerXiaohongshuDiscoveryAdapter,
     MediaCrawlerXiaohongshuFetchAdapter,
 )
@@ -17,12 +23,18 @@ class AdapterRegistry:
             "web_search_wechat": WebSearchWechatAdapter(),
             "wechat_exporter_search": WechatExporterSearchAdapter(),
             "xiaohongshu_external_search": MediaCrawlerXiaohongshuDiscoveryAdapter(),
+            "weibo_external_search": MediaCrawlerWeiboDiscoveryAdapter(),
+            "bilibili_external_search": MediaCrawlerBilibiliDiscoveryAdapter(),
+            "douyin_external_search": MediaCrawlerDouyinDiscoveryAdapter(),
         }
         self._fetch: dict[str, BaseFetchAdapter] = {
             "mock_wechat_fetch": MockWechatFetchAdapter(),
             "web_fetch_wechat": WebFetchWechatAdapter(),
             "wechat_exporter_fetch": WechatExporterFetchAdapter(),
             "xiaohongshu_external_fetch": MediaCrawlerXiaohongshuFetchAdapter(),
+            "weibo_external_fetch": MediaCrawlerWeiboFetchAdapter(),
+            "bilibili_external_fetch": MediaCrawlerBilibiliFetchAdapter(),
+            "douyin_external_fetch": MediaCrawlerDouyinFetchAdapter(),
         }
 
     def get_discovery(self, name: str) -> BaseDiscoveryAdapter:

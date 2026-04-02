@@ -292,3 +292,202 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
             content_text=str(item.get("content_text") or candidate.snippet),
             source_id=str(item.get("source_id") or ""),
         )
+
+
+class MediaCrawlerPlatformDiscoveryAdapter(ExternalDiscoveryAdapter):
+    platform_name: str
+    runner_name: str
+
+    def build_discovery_command(self, keyword: str, limit: int) -> ExternalCommandSpec:
+        repo_path = self.managed_repository_path()
+        if not repo_path.exists():
+            raise SearchRequestError(
+                "managed MediaCrawler checkout is missing",
+                details={
+                    **self.describe_managed_repository(),
+                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
+                },
+            )
+        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
+        return ExternalCommandSpec(
+            argv=[
+                sys.executable,
+                str(runner_script),
+                "--platform",
+                self.platform_name,
+                "--repo",
+                str(repo_path),
+                "--keyword",
+                keyword,
+                "--limit",
+                str(limit),
+            ],
+            cwd=repo_path,
+            timeout_seconds=600,
+        )
+
+    def parse_discovery_result(
+        self,
+        keyword: str,
+        result: ExternalRunResult,
+    ) -> list[DiscoveryCandidate]:
+        payload = result.parse_json()
+        items = payload["items"] if isinstance(payload, dict) else []
+        candidates: list[DiscoveryCandidate] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            source_url = item.get("source_url")
+            account_name = item.get("account_name")
+            if not isinstance(title, str) or not isinstance(source_url, str) or not isinstance(account_name, str):
+                continue
+            candidates.append(
+                DiscoveryCandidate(
+                    keyword=keyword,
+                    source_engine=self.info.name,
+                    title=title,
+                    snippet=str(item.get("snippet", "")),
+                    source_url=source_url,
+                    account_name=account_name,
+                    discovered_at=datetime.now(UTC),
+                )
+            )
+        return candidates
+
+
+class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
+    platform_name: str
+
+    def build_fetch_command(self, candidate: DiscoveryCandidate) -> ExternalCommandSpec:
+        repo_path = self.managed_repository_path()
+        if not repo_path.exists():
+            raise FetchRequestError(
+                "managed MediaCrawler checkout is missing",
+                details={
+                    **self.describe_managed_repository(),
+                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
+                },
+            )
+        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
+        return ExternalCommandSpec(
+            argv=[
+                sys.executable,
+                str(runner_script),
+                "--platform",
+                self.platform_name,
+                "--mode",
+                "fetch",
+                "--repo",
+                str(repo_path),
+                "--source-url",
+                candidate.source_url,
+            ],
+            cwd=repo_path,
+            timeout_seconds=600,
+        )
+
+    def parse_fetch_result(
+        self,
+        candidate: DiscoveryCandidate,
+        result: ExternalRunResult,
+    ) -> FetchedArticle:
+        payload = result.parse_json()
+        item = payload.get("item") if isinstance(payload, dict) else None
+        if not isinstance(item, dict):
+            raise FetchRequestError(
+                "external MediaCrawler fetch command returned an invalid payload",
+                details={"adapter": self.info.name, "source_url": candidate.source_url},
+            )
+
+        publish_time_raw = item.get("publish_time")
+        if not isinstance(publish_time_raw, str):
+            raise FetchRequestError(
+                "external MediaCrawler fetch payload is missing publish_time",
+                details={"adapter": self.info.name, "source_url": candidate.source_url},
+            )
+
+        return FetchedArticle(
+            keyword=candidate.keyword,
+            platform=self.platform_name,
+            title=str(item.get("title") or candidate.title),
+            source_url=str(item.get("source_url") or candidate.source_url),
+            account_name=str(item.get("account_name") or candidate.account_name),
+            publish_time=datetime.fromisoformat(publish_time_raw.replace("Z", "+00:00")),
+            read_count=int(item.get("read_count") or 0),
+            comment_count=int(item.get("comment_count") or 0),
+            content_text=str(item.get("content_text") or candidate.snippet),
+            source_id=str(item.get("source_id") or ""),
+        )
+
+
+class MediaCrawlerWeiboDiscoveryAdapter(MediaCrawlerPlatformDiscoveryAdapter):
+    info = AdapterInfo(
+        name="weibo_external_search",
+        kind="search",
+        platform="weibo",
+        description="Managed MediaCrawler-based Weibo discovery adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "weibo"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository
+
+
+class MediaCrawlerWeiboFetchAdapter(MediaCrawlerPlatformFetchAdapter):
+    info = AdapterInfo(
+        name="weibo_external_fetch",
+        kind="fetch",
+        platform="weibo",
+        description="Managed MediaCrawler-based Weibo fetch adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "weibo"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository
+
+
+class MediaCrawlerBilibiliDiscoveryAdapter(MediaCrawlerPlatformDiscoveryAdapter):
+    info = AdapterInfo(
+        name="bilibili_external_search",
+        kind="search",
+        platform="bilibili",
+        description="Managed MediaCrawler-based Bilibili discovery adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "bilibili"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository
+
+
+class MediaCrawlerBilibiliFetchAdapter(MediaCrawlerPlatformFetchAdapter):
+    info = AdapterInfo(
+        name="bilibili_external_fetch",
+        kind="fetch",
+        platform="bilibili",
+        description="Managed MediaCrawler-based Bilibili fetch adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "bilibili"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository
+
+
+class MediaCrawlerDouyinDiscoveryAdapter(MediaCrawlerPlatformDiscoveryAdapter):
+    info = AdapterInfo(
+        name="douyin_external_search",
+        kind="search",
+        platform="douyin",
+        description="Managed MediaCrawler-based Douyin discovery adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "douyin"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository
+
+
+class MediaCrawlerDouyinFetchAdapter(MediaCrawlerPlatformFetchAdapter):
+    info = AdapterInfo(
+        name="douyin_external_fetch",
+        kind="fetch",
+        platform="douyin",
+        description="Managed MediaCrawler-based Douyin fetch adapter backed by a clean upstream repository checkout.",
+        live=True,
+    )
+    platform_name = "douyin"
+    repository = MediaCrawlerXiaohongshuDiscoveryAdapter.repository

@@ -107,13 +107,22 @@ class ApiIntegrationTests(unittest.TestCase):
         health = self.get_json("/health")
         sources = self.get_json("/api/discovery/sources")
         self.assertEqual(health["status"], "ok")
-        self.assertEqual(len(sources), 8)
+        self.assertEqual(len(sources), 14)
         self.assertEqual({item["kind"] for item in sources}, {"search", "fetch"})
-        self.assertEqual({item["platform"] for item in sources}, {"wechat", "xiaohongshu"})
+        self.assertEqual(
+            {item["platform"] for item in sources},
+            {"wechat", "xiaohongshu", "weibo", "bilibili", "douyin"},
+        )
         self.assertTrue(any(item["name"] == "web_fetch_wechat" and item["live"] for item in sources))
         self.assertTrue(any(item["name"] == "wechat_exporter_fetch" and item["live"] for item in sources))
         self.assertTrue(any(item["name"] == "xiaohongshu_external_search" for item in sources))
         self.assertTrue(any(item["name"] == "xiaohongshu_external_fetch" for item in sources))
+        self.assertTrue(any(item["name"] == "weibo_external_search" for item in sources))
+        self.assertTrue(any(item["name"] == "weibo_external_fetch" for item in sources))
+        self.assertTrue(any(item["name"] == "bilibili_external_search" for item in sources))
+        self.assertTrue(any(item["name"] == "bilibili_external_fetch" for item in sources))
+        self.assertTrue(any(item["name"] == "douyin_external_search" for item in sources))
+        self.assertTrue(any(item["name"] == "douyin_external_fetch" for item in sources))
 
     def test_preview_and_job_queries(self) -> None:
         preview = self.post_json(

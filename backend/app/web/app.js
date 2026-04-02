@@ -196,6 +196,7 @@ function localizePlatform(platform) {
     weibo: "微博",
     zhihu: "知乎",
     bilibili: "B站",
+    douyin: "抖音",
   };
   return String(platform)
     .split(",")
@@ -355,8 +356,9 @@ async function bootstrap() {
 const PLATFORM_OPTIONS = [
   { key: "wechat", label: "公众号", description: "微信公众号文章发现与抓取", supported: true },
   { key: "xiaohongshu", label: "小红书", description: "小红书笔记发现与详情抓取", supported: true },
-  { key: "weibo", label: "微博", description: "微博热点与内容抓取，后续接入", supported: false },
+  { key: "weibo", label: "微博", description: "微博热点与内容抓取", supported: true },
+  { key: "douyin", label: "抖音", description: "抖音热点视频与内容抓取", supported: true },
   { key: "zhihu", label: "知乎", description: "知乎热门回答与专栏，后续接入", supported: false },
-  { key: "bilibili", label: "B站", description: "B站热门视频与动态，后续接入", supported: false },
+  { key: "bilibili", label: "B站", description: "B站热门视频与动态抓取", supported: true },
 ];
 bootstrap();

@@ -183,3 +183,57 @@ class WorkflowServiceTests(unittest.TestCase):
 
             with self.assertRaises(SearchRequestError):
                 WorkflowService().run_preview(request_payload)
+
+    def test_weibo_platform_uses_external_strategy(self) -> None:
+        request_payload = WorkflowPreviewRequest(
+            keywords=["AI Agent"],
+            platforms=["weibo"],
+            limit=1,
+            top_k=1,
+            fallback_to_mock=False,
+        )
+        weibo_discovery = MagicMock()
+        weibo_discovery.discover.return_value = [
+            DiscoveryCandidate(
+                keyword="AI Agent",
+                source_engine="weibo_external_search",
+                title="Weibo Brief",
+                snippet="summary",
+                source_url="https://m.weibo.cn/detail/mock-1",
+                account_name="Weibo Insight",
+                discovered_at=datetime.now(UTC),
+            )
+        ]
+        weibo_fetch = MagicMock()
+        weibo_fetch.fetch_article.return_value = FetchedArticle(
+            keyword="AI Agent",
+            platform="weibo",
+            title="Weibo Brief",
+            source_url="https://m.weibo.cn/detail/mock-1",
+            account_name="Weibo Insight",
+            publish_time=datetime.now(UTC),
+            read_count=90,
+            comment_count=9,
+            content_text="weibo body",
+            source_id="weibo-1",
+        )
+
+        with (
+            patch("app.services.workflow.ensure_db_initialized"),
+            patch("app.services.workflow.workflow_repository") as workflow_repository,
+            patch("app.services.workflow.adapter_registry") as adapter_registry,
+        ):
+            workflow_repository.create_job.return_value = 102
+            adapter_registry.get_discovery.side_effect = lambda name: {
+                "weibo_external_search": weibo_discovery,
+            }[name]
+            adapter_registry.get_fetch.side_effect = lambda name: {
+                "weibo_external_fetch": weibo_fetch,
+            }[name]
+
+            response = WorkflowService().run_preview(request_payload)
+
+        self.assertEqual(response.platforms, ["weibo"])
+        self.assertEqual(response.discovered_count, 1)
+        self.assertEqual(response.fetched_count, 1)
+        self.assertEqual(response.ranked_count, 1)

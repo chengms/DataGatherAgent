@@ -15,6 +15,9 @@ class WorkflowService:
     PLATFORM_STRATEGIES: dict[str, tuple[str, str]] = {
         "wechat": ("wechat_exporter_search", "wechat_exporter_fetch"),
         "xiaohongshu": ("xiaohongshu_external_search", "xiaohongshu_external_fetch"),
+        "weibo": ("weibo_external_search", "weibo_external_fetch"),
+        "bilibili": ("bilibili_external_search", "bilibili_external_fetch"),
+        "douyin": ("douyin_external_search", "douyin_external_fetch"),
     }
 
     def _fallback_discovery_source(self, platform: str) -> str | None:

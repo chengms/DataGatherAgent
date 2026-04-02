@@ -11,6 +11,9 @@ from app.adapters.external_tool import (
     ExternalRepositorySpec,
     ExternalRunResult,
     ExternalToolRunner,
+    MediaCrawlerBilibiliFetchAdapter,
+    MediaCrawlerDouyinFetchAdapter,
+    MediaCrawlerWeiboDiscoveryAdapter,
     MediaCrawlerXiaohongshuDiscoveryAdapter,
     MediaCrawlerXiaohongshuFetchAdapter,
 )
@@ -275,6 +278,100 @@ class ExternalToolAdapterTests(unittest.TestCase):
         self.assertEqual(article.platform, "xiaohongshu")
         self.assertEqual(article.read_count, 321)
         self.assertEqual(article.comment_count, 17)
+
+    def test_weibo_adapter_parses_normalized_output(self) -> None:
+        adapter = MediaCrawlerWeiboDiscoveryAdapter()
+        result = ExternalRunResult(
+            argv=["python"],
+            cwd=Path("."),
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "Weibo Title",
+                            "snippet": "Weibo Summary",
+                            "source_url": "https://m.weibo.cn/detail/demo",
+                            "account_name": "Author WB",
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+        items = adapter.parse_discovery_result(keyword="AI", result=result)
+        self.assertEqual(items[0].source_engine, "weibo_external_search")
+        self.assertEqual(items[0].source_url, "https://m.weibo.cn/detail/demo")
+
+    def test_bilibili_fetch_adapter_parses_normalized_output(self) -> None:
+        adapter = MediaCrawlerBilibiliFetchAdapter()
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="bilibili_external_search",
+            title="Bilibili Title",
+            snippet="summary",
+            source_url="https://www.bilibili.com/video/BV1demo",
+            account_name="UP A",
+            discovered_at=datetime.now(UTC),
+        )
+        result = ExternalRunResult(
+            argv=["python"],
+            cwd=Path("."),
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "item": {
+                        "title": "Bilibili Title",
+                        "source_url": "https://www.bilibili.com/video/BV1demo",
+                        "account_name": "UP A",
+                        "publish_time": "2026-04-01T00:00:00Z",
+                        "read_count": 456,
+                        "comment_count": 12,
+                        "content_text": "video summary",
+                        "source_id": "BV1demo",
+                    }
+                }
+            ),
+            stderr="",
+        )
+        article = adapter.parse_fetch_result(candidate=candidate, result=result)
+        self.assertEqual(article.platform, "bilibili")
+        self.assertEqual(article.source_id, "BV1demo")
+
+    def test_douyin_fetch_adapter_parses_normalized_output(self) -> None:
+        adapter = MediaCrawlerDouyinFetchAdapter()
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="douyin_external_search",
+            title="Douyin Title",
+            snippet="summary",
+            source_url="https://www.douyin.com/video/demo",
+            account_name="Creator A",
+            discovered_at=datetime.now(UTC),
+        )
+        result = ExternalRunResult(
+            argv=["python"],
+            cwd=Path("."),
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "item": {
+                        "title": "Douyin Title",
+                        "source_url": "https://www.douyin.com/video/demo",
+                        "account_name": "Creator A",
+                        "publish_time": "2026-04-01T00:00:00Z",
+                        "read_count": 789,
+                        "comment_count": 34,
+                        "content_text": "video body",
+                        "source_id": "demo",
+                    }
+                }
+            ),
+            stderr="",
+        )
+        article = adapter.parse_fetch_result(candidate=candidate, result=result)
+        self.assertEqual(article.platform, "douyin")
+        self.assertEqual(article.comment_count, 34)
 
 
 if __name__ == "__main__":
