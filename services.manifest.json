@@ -23,7 +23,7 @@
         "ok_equals": true,
         "interval_seconds": 120,
         "cooldown_seconds": 300,
-        "message": "微信公众号登录已过期，请重新运行 .\\login-wechat.ps1 扫码登录。"
+        "message": "微信公众号登录已过期，请打开 http://127.0.0.1:3000/dashboard/account 在现有 Web 界面重新扫码登录。"
       },
       "install": ["corepack", "yarn", "install", "--frozen-lockfile"],
       "start": ["corepack", "yarn", "dev", "--host", "0.0.0.0", "--port", "3000"],
@@ -48,7 +48,7 @@
         "ok_equals": true,
         "interval_seconds": 300,
         "cooldown_seconds": 300,
-        "message": "小红书登录已过期，请重新运行 .\\login-xhs.ps1 完成登录。"
+        "message": "小红书登录已过期，请打开 http://127.0.0.1:8080 在现有 Web 界面重新完成登录。"
       },
       "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
       "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],

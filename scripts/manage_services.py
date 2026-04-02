@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage local backend and external crawler services.")
     parser.add_argument(
         "command",
-        choices=["up", "ensure-repos", "update-repos"],
+        choices=["up", "stop", "ensure-repos", "update-repos"],
         nargs="?",
         default="up",
     )
@@ -102,6 +102,62 @@ def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(1)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def pids_for_port(port: int) -> list[int]:
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return []
+        pids: list[int] = []
+        needle = f":{port}"
+        for line in completed.stdout.splitlines():
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            local_addr, state, pid_text = parts[1], parts[3], parts[4]
+            if needle not in local_addr or state.upper() != "LISTENING":
+                continue
+            try:
+                pid = int(pid_text)
+            except ValueError:
+                continue
+            if pid not in pids:
+                pids.append(pid)
+        return pids
+
+    completed = subprocess.run(
+        ["lsof", "-ti", f"tcp:{port}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode not in {0, 1}:
+        return []
+    pids = []
+    for line in completed.stdout.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid not in pids:
+            pids.append(pid)
+    return pids
+
+
+def stop_pid(pid: int) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
 
 
 def resolve_command(command: list[str]) -> list[str]:
@@ -400,6 +456,25 @@ def command_ensure_repos(update: bool, *, skip_install: bool) -> None:
     log("managed repositories are ready")
 
 
+def command_stop() -> None:
+    services, _, _ = load_manifest()
+    stopped: list[str] = []
+    for service in services:
+        port = service.get("ready_port")
+        if not port:
+            continue
+        pids = pids_for_port(int(port))
+        if not pids:
+            continue
+        for pid in pids:
+            stop_pid(pid)
+        stopped.append(f"{service['name']}:{port}")
+    if stopped:
+        log(f"stopped services on ports: {', '.join(stopped)}")
+    else:
+        log("no managed services were running")
+
+
 def command_up(update: bool, *, skip_install: bool) -> None:
     services, global_env, overrides = load_manifest()
     prepared: list[tuple[dict[str, Any], Path, dict[str, str]]] = []
@@ -523,6 +598,8 @@ def main() -> int:
             command_ensure_repos(update=not args.no_update, skip_install=args.skip_install)
         elif args.command == "update-repos":
             command_ensure_repos(update=True, skip_install=args.skip_install)
+        elif args.command == "stop":
+            command_stop()
         else:
             command_up(update=not args.no_update, skip_install=args.skip_install)
     except Exception as exc:

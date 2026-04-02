@@ -72,6 +72,18 @@ class ManageServicesTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(reason, "ok")
 
+    def test_command_stop_uses_ready_ports(self) -> None:
+        services = [
+            {"name": "wechat_exporter", "ready_port": 3000},
+            {"name": "backend", "ready_port": 8000},
+        ]
+        with patch("manage_services.load_manifest", return_value=(services, {}, {})), patch(
+            "manage_services.pids_for_port"
+        ) as pids_for_port, patch("manage_services.stop_pid") as stop_pid:
+            pids_for_port.side_effect = [[111], []]
+            manage_services.command_stop()
+        stop_pid.assert_called_once_with(111)
+
 
 if __name__ == "__main__":
     unittest.main()
