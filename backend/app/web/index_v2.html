@@ -1,11 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>数据采集工作台</title>
-  <!-- legacy-marker: 鏁版嵁閲囬泦宸ヤ綔鍙? -->
-  <!-- legacy-asset: /assets/app.js -->
   <link rel="stylesheet" href="/assets/style_v2.css">
 </head>
 <body>
@@ -13,28 +11,61 @@
   <main class="shell">
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">工作流控制台</p>
-        <h1>按平台组合采集、统一排序、支持本地全文与评论预览。</h1>
-        <p class="hero-text">可勾选单个平台或多个平台，支持一键全选。结果区会标注数据出处和内容类型，并可按平台筛选查看。</p>
+        <p class="eyebrow">Mission Control</p>
+        <h1>围绕任务发起、结果筛选和本地沉淀，重组整套采集操作流。</h1>
+        <p class="hero-text">界面按常见采集平台的使用路径重新组织：先选择平台和关键词发起任务，再在同一工作区查看热门结果、抓取明细和本地库全文预览。</p>
       </div>
-      <div class="hero-status" id="healthBadge">正在检查接口状态...</div>
+      <div class="hero-side">
+        <div class="hero-status" id="healthBadge">正在检查接口状态...</div>
+        <div class="hero-stat-grid">
+          <article class="hero-stat-card">
+            <span>平台接入</span>
+            <strong id="heroPlatformCount">-</strong>
+            <small id="heroPlatformMeta">正在统计已接入与就绪数量</small>
+          </article>
+          <article class="hero-stat-card">
+            <span>在线链路</span>
+            <strong id="heroLiveCount">-</strong>
+            <small id="heroLiveMeta">正在检查可直接抓取的平台链路</small>
+          </article>
+          <article class="hero-stat-card">
+            <span>本地资料库</span>
+            <strong id="heroCatalogCount">-</strong>
+            <small id="heroCatalogMeta">支持全文搜索与评论预览</small>
+          </article>
+          <article class="hero-stat-card">
+            <span>最近任务</span>
+            <strong id="heroJobCount">-</strong>
+            <small id="heroJobMeta">可回看历史运行摘要</small>
+          </article>
+        </div>
+      </div>
     </section>
 
-    <section class="layout">
+    <section class="layout command-layout">
       <article class="panel control-panel">
-        <div class="panel-head">
-          <h2>运行预览</h2>
+        <div class="panel-head compact">
+          <div>
+            <p class="eyebrow">Launchpad</p>
+            <h2>新建采集任务</h2>
+            <p class="panel-intro">输入一组关键词，勾选平台后直接运行预览。系统会同步写入最近任务，并把热门结果和抓取明细送入结果工作区。</p>
+          </div>
           <button id="refreshSourcesButton" class="ghost-button" type="button">刷新平台状态</button>
         </div>
+
         <form id="previewForm" class="preview-form">
           <label>
             关键词
             <textarea id="keywordsInput" rows="4" placeholder="AI Agent&#10;半导体&#10;储能">AI Agent
 Semiconductor</textarea>
           </label>
+          <p class="helper-line">支持按行或用逗号分隔多个主题，适合批量监测同一轮任务。</p>
 
           <fieldset class="platform-section">
-            <legend>采集平台</legend>
+            <div class="section-top">
+              <legend>采集平台</legend>
+              <span id="platformSelectionMeta" class="subtle">尚未选择平台</span>
+            </div>
             <div class="inline-actions">
               <button id="selectAllPlatformsButton" class="ghost-button tiny" type="button">全选已接入</button>
               <button id="clearPlatformsButton" class="ghost-button tiny" type="button">清空选择</button>
@@ -44,11 +75,11 @@ Semiconductor</textarea>
 
           <div class="three-up">
             <label>
-              采集上限
+              每个平台采集上限
               <input id="limitInput" type="number" min="1" max="100" value="5">
             </label>
             <label>
-              排名 Top K
+              热门结果 Top K
               <input id="topKInput" type="number" min="1" max="50" value="3">
             </label>
             <label class="toggle-wrap">
@@ -57,88 +88,157 @@ Semiconductor</textarea>
             </label>
           </div>
 
-          <button id="runButton" class="primary-button" type="submit">开始预览</button>
+          <div class="control-footer">
+            <p class="status-line" id="formStatus">空闲中。</p>
+            <button id="runButton" class="primary-button" type="submit">运行预览</button>
+          </div>
         </form>
-        <p class="status-line" id="formStatus">空闲中。</p>
       </article>
 
-      <article class="panel">
-        <div class="panel-head">
-          <h2>平台状态</h2>
-          <button id="refreshJobsButton" class="ghost-button" type="button">刷新任务</button>
+      <article class="panel source-panel">
+        <div class="panel-head compact">
+          <div>
+            <p class="eyebrow">Platform Health</p>
+            <h2>平台健康与能力</h2>
+            <p class="panel-intro">这里集中展示各平台是否已接入、是否具备发现与抓取能力，以及当前是否为在线链路。</p>
+          </div>
         </div>
         <div id="sourcesGrid" class="platform-status-grid"></div>
       </article>
     </section>
 
-    <section class="layout">
+    <section class="layout workspace-layout">
       <article class="panel result-panel">
         <div class="panel-head">
-          <h2>最近一次预览</h2>
-          <span class="subtle" id="latestPreviewMeta">还没有运行记录。</span>
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <h2>结果工作区</h2>
+            <p id="workspaceMeta" class="panel-intro">按热门结果、抓取明细和本地库三个视图切换。</p>
+          </div>
+          <div class="tab-bar" role="tablist" aria-label="结果视图">
+            <button id="tabHotButton" class="tab-button active" type="button">热门结果</button>
+            <button id="tabFetchedButton" class="tab-button" type="button">抓取明细</button>
+            <button id="tabLocalButton" class="tab-button" type="button">本地库搜索</button>
+          </div>
         </div>
-        <div class="inline-filters">
-          <label>
-            热门结果平台筛选
-            <select id="hotPlatformFilter">
-              <option value="">全部平台</option>
-            </select>
-          </label>
-        </div>
-        <div id="previewSummary" class="summary-grid"></div>
-        <div id="hotArticles" class="article-list empty-state">运行一次预览后，这里会显示排序结果。</div>
-      </article>
 
-      <article class="panel jobs-panel">
-        <div class="panel-head">
-          <h2>最近任务</h2>
-          <span class="subtle" id="jobsMeta">正在等待数据。</span>
-        </div>
-        <div id="jobsList" class="job-list empty-state">还没有加载任务。</div>
-      </article>
-    </section>
-
-    <section class="layout single">
-      <article class="panel local-panel">
-        <div class="panel-head">
-          <h2>本地数据搜索</h2>
-          <span class="subtle" id="localMeta">支持全文检索（标题、正文、账号、关键词、链接）。</span>
-        </div>
-        <form id="localSearchForm" class="search-form">
-          <label>
-            关键词 / 链接
-            <input id="localQueryInput" type="text" placeholder="输入关键词、账号名或原文链接">
-          </label>
-          <div class="three-up">
+        <section id="hotWorkspace" class="workspace-view">
+          <div class="workspace-headline">
+            <span id="latestPreviewMeta" class="subtle">还没有运行记录。</span>
+          </div>
+          <div id="previewSummary" class="summary-grid"></div>
+          <div class="filter-row">
             <label>
               平台
-              <select id="localPlatformFilter">
+              <select id="hotPlatformFilter">
                 <option value="">全部平台</option>
               </select>
             </label>
             <label>
               内容类型
-              <select id="localKindFilter">
+              <select id="hotKindFilter">
                 <option value="">全部类型</option>
-                <option value="article">图文文章</option>
-                <option value="note">笔记</option>
-                <option value="video">视频</option>
-                <option value="mixed">混合</option>
               </select>
             </label>
             <label>
-              任务 ID（可选）
-              <input id="localJobIdInput" type="number" min="1" step="1" placeholder="仅看某次任务">
+              关键词搜索
+              <input id="hotKeywordFilter" type="text" placeholder="按标题、账号或关键词过滤">
             </label>
           </div>
-          <button id="localSearchButton" class="primary-button" type="submit">搜索本地数据</button>
-        </form>
-        <div class="pager-row">
-          <button id="localPrevButton" class="ghost-button tiny" type="button">上一页</button>
-          <span id="localPageMeta" class="subtle">未开始搜索</span>
-          <button id="localNextButton" class="ghost-button tiny" type="button">下一页</button>
+          <div id="hotArticles" class="article-list empty-state">运行一次预览后，这里会显示排序结果。</div>
+        </section>
+
+        <section id="fetchedWorkspace" class="workspace-view hidden">
+          <p id="fetchedAvailabilityHint" class="subtle">运行预览后，这里会展示发现候选与抓取明细。</p>
+          <div class="two-up">
+            <article class="workspace-card">
+              <div class="panel-subhead">
+                <h3>发现候选</h3>
+                <span id="discoveryMeta" class="subtle">尚无候选</span>
+              </div>
+              <div id="discoveryCandidates" class="article-list empty-state">暂无候选数据。</div>
+            </article>
+
+            <article class="workspace-card">
+              <div class="panel-subhead">
+                <h3>抓取明细</h3>
+                <span id="fetchedMeta" class="subtle">尚无抓取数据</span>
+              </div>
+              <div class="filter-row compact">
+                <label>
+                  平台
+                  <select id="fetchedPlatformFilter">
+                    <option value="">全部平台</option>
+                  </select>
+                </label>
+                <label>
+                  关键词搜索
+                  <input id="fetchedKeywordFilter" type="text" placeholder="按标题、账号或关键词过滤">
+                </label>
+              </div>
+              <div id="fetchedArticles" class="article-list empty-state">暂无抓取明细。</div>
+            </article>
+          </div>
+        </section>
+
+        <section id="localWorkspace" class="workspace-view hidden">
+          <div class="panel-subhead wide">
+            <div>
+              <h3>本地数据搜索</h3>
+              <p id="localMeta" class="subtle">支持全文检索（标题、正文、账号、关键词、链接）和评论预览。</p>
+            </div>
+          </div>
+          <form id="localSearchForm" class="search-form">
+            <label>
+              关键词 / 链接
+              <input id="localQueryInput" type="text" placeholder="输入关键词、账号名或原文链接">
+            </label>
+            <div class="three-up">
+              <label>
+                平台
+                <select id="localPlatformFilter">
+                  <option value="">全部平台</option>
+                </select>
+              </label>
+              <label>
+                内容类型
+                <select id="localKindFilter">
+                  <option value="">全部类型</option>
+                  <option value="article">图文文章</option>
+                  <option value="note">笔记</option>
+                  <option value="video">视频</option>
+                  <option value="mixed">混合</option>
+                </select>
+              </label>
+              <label>
+                任务 ID（可选）
+                <input id="localJobIdInput" type="number" min="1" step="1" placeholder="仅看某次任务">
+              </label>
+            </div>
+            <div class="control-footer">
+              <span id="localPageMeta" class="subtle">未开始搜索</span>
+              <button id="localSearchButton" class="primary-button" type="submit">搜索本地数据</button>
+            </div>
+          </form>
+          <div class="pager-row">
+            <button id="localPrevButton" class="ghost-button tiny" type="button">上一页</button>
+            <button id="localNextButton" class="ghost-button tiny" type="button">下一页</button>
+          </div>
+          <div id="localArticles" class="article-list empty-state">暂无本地搜索结果。</div>
+        </section>
+      </article>
+
+      <article class="panel jobs-panel">
+        <div class="panel-head compact">
+          <div>
+            <p class="eyebrow">Activity</p>
+            <h2>最近任务</h2>
+            <p class="panel-intro">保留最近任务摘要。点击任一任务即可把对应热门结果重新加载到工作区。</p>
+          </div>
+          <button id="refreshJobsButton" class="ghost-button" type="button">刷新任务</button>
         </div>
-        <div id="localArticles" class="article-list empty-state">暂无本地搜索结果。</div>
+        <p id="jobsMeta" class="subtle">正在等待数据。</p>
+        <div id="jobsList" class="job-list empty-state">还没有加载任务。</div>
       </article>
     </section>
   </main>

@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import socket
 import subprocess
@@ -101,8 +101,7 @@ class ApiIntegrationTests(unittest.TestCase):
         with request.urlopen(self.build_url("/"), timeout=15) as response:
             html = response.read().decode("utf-8")
         self.assertIn("数据采集工作台", html)
-        self.assertIn("/assets/app.js", html)
-
+        self.assertIn("/assets/app_v2.js", html)
     def test_health_and_sources(self) -> None:
         health = self.get_json("/health")
         sources = self.get_json("/api/discovery/sources")
@@ -152,3 +151,4 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(status_code, 404)
         self.assertEqual(payload["error"]["code"], "NOT_FOUND")
         self.assertIn("request_id", payload)
+
