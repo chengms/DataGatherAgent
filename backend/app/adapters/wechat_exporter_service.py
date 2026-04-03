@@ -176,6 +176,8 @@ class WechatExporterFetchAdapter(BaseFetchAdapter):
         return FetchedArticle(
             keyword=candidate.keyword,
             platform="wechat",
+            source_engine=self.info.name,
+            content_kind="article",
             title=self._extract_title(soup) or candidate.title,
             source_url=candidate.source_url,
             account_name=self._extract_account_name(soup) or candidate.account_name,

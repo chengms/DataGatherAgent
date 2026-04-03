@@ -36,9 +36,19 @@ class DiscoveryCandidate(BaseModel):
     discovered_at: datetime
 
 
+class ArticleComment(BaseModel):
+    nickname: str = ""
+    content: str
+    publish_time: str | None = None
+    like_count: int = 0
+    sub_comment_count: int = 0
+
+
 class FetchedArticle(BaseModel):
     keyword: str
     platform: str
+    source_engine: str = ""
+    content_kind: str = "article"
     title: str
     source_url: str
     account_name: str
@@ -47,10 +57,14 @@ class FetchedArticle(BaseModel):
     comment_count: int = 0
     content_text: str
     source_id: str
+    comments: list[ArticleComment] = Field(default_factory=list)
 
 
 class RankedArticle(BaseModel):
     keyword: str
+    platform: str
+    source_engine: str = ""
+    content_kind: str = "article"
     title: str
     source_url: str
     account_name: str
@@ -92,6 +106,9 @@ class WorkflowJobSummary(BaseModel):
 
 class RankedArticleRecord(BaseModel):
     keyword: str
+    platform: str
+    source_engine: str = ""
+    content_kind: str = "article"
     title: str
     source_url: str
     account_name: str
@@ -109,6 +126,29 @@ class RankedArticleRecord(BaseModel):
 class WorkflowJobDetail(BaseModel):
     job: WorkflowJobSummary
     hot_articles: list[RankedArticleRecord]
+
+
+class FetchedArticleRecord(BaseModel):
+    id: int
+    job_id: int
+    keyword: str
+    platform: str
+    source_engine: str
+    content_kind: str
+    title: str
+    source_url: str
+    account_name: str
+    publish_time: str
+    read_count: int
+    comment_count: int
+    content_text: str
+    source_id: str
+    comments: list[ArticleComment] = Field(default_factory=list)
+
+
+class FetchedArticleSearchResponse(BaseModel):
+    total: int
+    items: list[FetchedArticleRecord]
 
 
 class SourceInfoResponse(BaseModel):

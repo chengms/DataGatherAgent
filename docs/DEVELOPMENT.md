@@ -103,6 +103,14 @@ Current scaffolded repository env vars:
 - `DATA_GATHER_WECHAT_EXPORTER_DIR`
 - `DATA_GATHER_XHS_CRAWLER_DIR`
 
+Current platform strategy mapping in `WorkflowService.PLATFORM_STRATEGIES`:
+
+- `wechat` -> `wechat_exporter_search` + `wechat_exporter_fetch`
+- `xiaohongshu` -> `xiaohongshu_external_search` + `xiaohongshu_external_fetch`
+- `weibo` -> `weibo_external_search` + `weibo_external_fetch`
+- `douyin` -> `douyin_external_search` + `douyin_external_fetch`
+- `bilibili` -> `bilibili_external_search` + `bilibili_external_fetch`
+
 For the service-mode WeChat exporter integration, set:
 
 - `WECHAT_EXPORTER_BASE_URL`
@@ -142,6 +150,8 @@ Managed external repositories currently covered by `up.sh` / `up.ps1`:
 - `MediaCrawler` on port `8080`
 
 The `MediaCrawler` integration is kept as a clean managed checkout with no local source edits so upstream pulls remain fast-forward friendly. Xiaohongshu discovery is executed through `scripts/mediacrawler_xhs_runner.py`, which overlays temporary runtime config and leaves the upstream repository clean.
+
+Additional MediaCrawler-backed platforms (Weibo, Douyin, Bilibili) are executed through `scripts/mediacrawler_platform_runner.py` with the same "temporary overlay config + clean checkout" pattern.
 
 Optional Xiaohongshu runtime variables:
 

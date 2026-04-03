@@ -12,7 +12,7 @@ from pathlib import Path
 from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter, BaseFetchAdapter
 from app.core.config import BASE_DIR, EXTERNAL_TOOLS_DIR
 from app.core.exceptions import FetchRequestError, SearchRequestError
-from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
+from app.schemas.workflow import ArticleComment, DiscoveryCandidate, FetchedArticle
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,10 @@ class ExternalRepositorySpec:
     def resolve_path(self) -> Path:
         configured = os.getenv(self.env_var) if self.env_var else None
         if configured:
-            return Path(configured).expanduser().resolve()
+            candidate = Path(configured).expanduser()
+            if not candidate.is_absolute():
+                candidate = (BASE_DIR / candidate).resolve()
+            return candidate
         return (EXTERNAL_TOOLS_DIR / self.default_dirname).resolve()
 
 
@@ -60,6 +63,8 @@ class ExternalToolRunner:
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=command.timeout_seconds,
             check=False,
         )
@@ -92,6 +97,48 @@ class ExternalToolAdapterMixin:
             "path": str(self.managed_repository_path()),
             "update_strategy": self.repository.update_strategy,
         }
+
+    def _normalize_comments(self, raw: object) -> list[ArticleComment]:
+        if not isinstance(raw, list):
+            return []
+        comments: list[ArticleComment] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content") or item.get("text")
+            if not isinstance(content, str) or not content.strip():
+                continue
+            comments.append(
+                ArticleComment(
+                    nickname=str(
+                        item.get("nickname")
+                        or item.get("user_name")
+                        or item.get("screen_name")
+                        or item.get("account_name")
+                        or "匿名用户"
+                    ),
+                    content=content.strip(),
+                    publish_time=str(item.get("publish_time") or item.get("create_date_time") or item.get("create_time") or ""),
+                    like_count=int(item.get("like_count") or item.get("comment_like_count") or item.get("digg_count") or 0),
+                    sub_comment_count=int(item.get("sub_comment_count") or item.get("reply_comment_total") or item.get("total_number") or 0),
+                )
+            )
+        return comments
+
+    def _infer_content_kind(self, platform: str, item: dict, source_url: str) -> str:
+        declared = item.get("content_kind")
+        if isinstance(declared, str) and declared in {"article", "video", "mixed", "note"}:
+            return declared
+        if platform in {"douyin", "bilibili"}:
+            return "video"
+        if platform == "xiaohongshu":
+            raw_type = str(item.get("note_type") or item.get("type") or "").lower()
+            if "video" in raw_type:
+                return "video"
+            return "note"
+        if "video" in source_url:
+            return "video"
+        return "article"
 
 
 class ExternalDiscoveryAdapter(ExternalToolAdapterMixin, BaseDiscoveryAdapter):
@@ -178,7 +225,7 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
                     "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
                 },
             )
-        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner.py"
+        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
@@ -244,7 +291,7 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
                     "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
                 },
             )
-        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner.py"
+        runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
@@ -283,6 +330,8 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
         return FetchedArticle(
             keyword=candidate.keyword,
             platform="xiaohongshu",
+            source_engine=self.info.name,
+            content_kind=self._infer_content_kind("xiaohongshu", item, candidate.source_url),
             title=str(item.get("title") or candidate.title),
             source_url=str(item.get("source_url") or candidate.source_url),
             account_name=str(item.get("account_name") or candidate.account_name),
@@ -291,6 +340,7 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
             comment_count=int(item.get("comment_count") or 0),
             content_text=str(item.get("content_text") or candidate.snippet),
             source_id=str(item.get("source_id") or ""),
+            comments=self._normalize_comments(item.get("comments")),
         )
 
 
@@ -410,6 +460,8 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
         return FetchedArticle(
             keyword=candidate.keyword,
             platform=self.platform_name,
+            source_engine=self.info.name,
+            content_kind=self._infer_content_kind(self.platform_name, item, candidate.source_url),
             title=str(item.get("title") or candidate.title),
             source_url=str(item.get("source_url") or candidate.source_url),
             account_name=str(item.get("account_name") or candidate.account_name),
@@ -418,6 +470,7 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
             comment_count=int(item.get("comment_count") or 0),
             content_text=str(item.get("content_text") or candidate.snippet),
             source_id=str(item.get("source_id") or ""),
+            comments=self._normalize_comments(item.get("comments")),
         )
 
 

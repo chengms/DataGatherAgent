@@ -56,6 +56,8 @@ class WebFetchWechatAdapter(BaseFetchAdapter):
         return FetchedArticle(
             keyword=candidate.keyword,
             platform="wechat",
+            source_engine=self.info.name,
+            content_kind="article",
             title=title,
             source_url=candidate.source_url,
             account_name=account_name,

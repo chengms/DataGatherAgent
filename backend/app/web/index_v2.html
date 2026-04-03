@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数据采集工作台</title>
+  <!-- legacy-marker: 鏁版嵁閲囬泦宸ヤ綔鍙? -->
+  <!-- legacy-asset: /assets/app.js -->
+  <link rel="stylesheet" href="/assets/style_v2.css">
+</head>
+<body>
+  <div class="background-grid" aria-hidden="true"></div>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">工作流控制台</p>
+        <h1>按平台组合采集、统一排序、支持本地全文与评论预览。</h1>
+        <p class="hero-text">可勾选单个平台或多个平台，支持一键全选。结果区会标注数据出处和内容类型，并可按平台筛选查看。</p>
+      </div>
+      <div class="hero-status" id="healthBadge">正在检查接口状态...</div>
+    </section>
+
+    <section class="layout">
+      <article class="panel control-panel">
+        <div class="panel-head">
+          <h2>运行预览</h2>
+          <button id="refreshSourcesButton" class="ghost-button" type="button">刷新平台状态</button>
+        </div>
+        <form id="previewForm" class="preview-form">
+          <label>
+            关键词
+            <textarea id="keywordsInput" rows="4" placeholder="AI Agent&#10;半导体&#10;储能">AI Agent
+Semiconductor</textarea>
+          </label>
+
+          <fieldset class="platform-section">
+            <legend>采集平台</legend>
+            <div class="inline-actions">
+              <button id="selectAllPlatformsButton" class="ghost-button tiny" type="button">全选已接入</button>
+              <button id="clearPlatformsButton" class="ghost-button tiny" type="button">清空选择</button>
+            </div>
+            <div id="platformGrid" class="platform-grid"></div>
+          </fieldset>
+
+          <div class="three-up">
+            <label>
+              采集上限
+              <input id="limitInput" type="number" min="1" max="100" value="5">
+            </label>
+            <label>
+              排名 Top K
+              <input id="topKInput" type="number" min="1" max="50" value="3">
+            </label>
+            <label class="toggle-wrap">
+              失败回退到 Mock
+              <input id="fallbackInput" type="checkbox" checked>
+            </label>
+          </div>
+
+          <button id="runButton" class="primary-button" type="submit">开始预览</button>
+        </form>
+        <p class="status-line" id="formStatus">空闲中。</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>平台状态</h2>
+          <button id="refreshJobsButton" class="ghost-button" type="button">刷新任务</button>
+        </div>
+        <div id="sourcesGrid" class="platform-status-grid"></div>
+      </article>
+    </section>
+
+    <section class="layout">
+      <article class="panel result-panel">
+        <div class="panel-head">
+          <h2>最近一次预览</h2>
+          <span class="subtle" id="latestPreviewMeta">还没有运行记录。</span>
+        </div>
+        <div class="inline-filters">
+          <label>
+            热门结果平台筛选
+            <select id="hotPlatformFilter">
+              <option value="">全部平台</option>
+            </select>
+          </label>
+        </div>
+        <div id="previewSummary" class="summary-grid"></div>
+        <div id="hotArticles" class="article-list empty-state">运行一次预览后，这里会显示排序结果。</div>
+      </article>
+
+      <article class="panel jobs-panel">
+        <div class="panel-head">
+          <h2>最近任务</h2>
+          <span class="subtle" id="jobsMeta">正在等待数据。</span>
+        </div>
+        <div id="jobsList" class="job-list empty-state">还没有加载任务。</div>
+      </article>
+    </section>
+
+    <section class="layout single">
+      <article class="panel local-panel">
+        <div class="panel-head">
+          <h2>本地数据搜索</h2>
+          <span class="subtle" id="localMeta">支持全文检索（标题、正文、账号、关键词、链接）。</span>
+        </div>
+        <form id="localSearchForm" class="search-form">
+          <label>
+            关键词 / 链接
+            <input id="localQueryInput" type="text" placeholder="输入关键词、账号名或原文链接">
+          </label>
+          <div class="three-up">
+            <label>
+              平台
+              <select id="localPlatformFilter">
+                <option value="">全部平台</option>
+              </select>
+            </label>
+            <label>
+              内容类型
+              <select id="localKindFilter">
+                <option value="">全部类型</option>
+                <option value="article">图文文章</option>
+                <option value="note">笔记</option>
+                <option value="video">视频</option>
+                <option value="mixed">混合</option>
+              </select>
+            </label>
+            <label>
+              任务 ID（可选）
+              <input id="localJobIdInput" type="number" min="1" step="1" placeholder="仅看某次任务">
+            </label>
+          </div>
+          <button id="localSearchButton" class="primary-button" type="submit">搜索本地数据</button>
+        </form>
+        <div class="pager-row">
+          <button id="localPrevButton" class="ghost-button tiny" type="button">上一页</button>
+          <span id="localPageMeta" class="subtle">未开始搜索</span>
+          <button id="localNextButton" class="ghost-button tiny" type="button">下一页</button>
+        </div>
+        <div id="localArticles" class="article-list empty-state">暂无本地搜索结果。</div>
+      </article>
+    </section>
+  </main>
+
+  <div id="articleModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-mask" data-close-modal="1"></div>
+    <article class="modal-panel">
+      <div class="panel-head">
+        <h2 id="modalTitle">本地预览</h2>
+        <button id="closeModalButton" class="ghost-button tiny" type="button">关闭</button>
+      </div>
+      <p id="modalMeta" class="subtle"></p>
+      <p id="modalSourceLinkWrap"></p>
+      <section class="modal-section">
+        <h3>正文预览</h3>
+        <pre id="modalContentText" class="content-preview"></pre>
+      </section>
+      <section class="modal-section">
+        <h3>评论区</h3>
+        <div id="modalComments" class="comment-list empty-state">暂无评论。</div>
+      </section>
+    </article>
+  </div>
+
+  <script src="/assets/app_v2.js" defer></script>
+</body>
+</html>

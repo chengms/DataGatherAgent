@@ -42,7 +42,7 @@
       "healthcheck_failure_threshold": 3,
       "login_check": {
         "type": "command_json",
-        "argv": ["python", "scripts/xhs_login_status.py"],
+        "argv": ["python", "scripts/mediacrawler_login_status.py"],
         "cwd": ".",
         "ok_field": "ok",
         "ok_equals": true,

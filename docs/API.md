@@ -35,8 +35,7 @@ Example request:
 ```json
 {
   "keywords": ["AI Agent", "Semiconductor"],
-  "discovery_source": "mock_wechat_search",
-  "fetch_source": "mock_wechat_fetch",
+  "platforms": ["wechat", "xiaohongshu", "weibo"],
   "limit": 3,
   "top_k": 2,
   "fallback_to_mock": true
@@ -46,13 +45,26 @@ Example request:
 Key request fields:
 
 - `keywords`: one or more search keywords
-- `platform`: defaults to `wechat`
-- `discovery_source`: discovery adapter name
-- `fetch_source`: fetch adapter name
+- `platforms`: one or more platforms to run in one request (defaults to `["wechat"]`)
+- `platform`: legacy single-platform field; use `platforms` for new calls
 - `limit`: candidates per keyword
 - `top_k`: number of ranked hot articles returned
 - `time_window_days`: ranking freshness window
 - `fallback_to_mock`: whether to fall back to mock adapters when live adapters fail
+- `discovery_source` / `fetch_source`: optional manual override for single-platform requests
+
+Current platform values:
+
+- `wechat`
+- `xiaohongshu`
+- `weibo`
+- `douyin`
+- `bilibili`
+
+Source selection behavior:
+
+- If `platforms` has multiple values, backend uses built-in platform strategies automatically
+- If a single platform is selected and both `discovery_source` and `fetch_source` are provided, backend uses the provided pair
 
 ### `GET /api/workflows/jobs`
 
@@ -91,4 +103,5 @@ Typical error codes:
 
 - The frontend page is served from `/`
 - Static assets are served from `/assets/*`
+- Workflow preview responses include `platforms` to reflect the selected platform set
 - Current automated tests cover health checks, adapter listing, workflow preview, job queries, adapter registry behavior, and ranking behavior

@@ -50,6 +50,8 @@ class MockWechatFetchAdapter(BaseFetchAdapter):
         return FetchedArticle(
             keyword=keyword,
             platform="wechat",
+            source_engine=self.info.name,
+            content_kind="article",
             title=candidate.title,
             source_url=candidate.source_url,
             account_name=candidate.account_name,

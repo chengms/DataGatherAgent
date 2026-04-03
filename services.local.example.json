@@ -11,7 +11,13 @@
     "mediacrawler_xhs": {
       "env": {
         "XHS_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
-        "XHS_MEDIACRAWLER_COOKIES": ""
+        "XHS_MEDIACRAWLER_COOKIES": "",
+        "WEIBO_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "WEIBO_MEDIACRAWLER_COOKIES": "",
+        "DY_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "DY_MEDIACRAWLER_COOKIES": "",
+        "BILI_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "BILI_MEDIACRAWLER_COOKIES": ""
       }
     },
     "backend": {

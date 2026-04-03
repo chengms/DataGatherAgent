@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import subprocess
@@ -37,76 +36,6 @@ def parse_args() -> argparse.Namespace:
     if args.mode == "fetch" and not args.source_url:
         parser.error("--source-url is required in fetch mode")
     return args
-
-
-def load_base_config(repo_dir: Path) -> dict[str, Any]:
-    config_path = repo_dir / "config" / "base_config.py"
-    spec = importlib.util.spec_from_file_location("media_base_config", config_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"unable to load base config from {config_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return {
-        name: getattr(module, name)
-        for name in dir(module)
-        if name.isupper()
-    }
-
-
-def build_override_config() -> str:
-    lines = [
-        "from pkgutil import extend_path",
-        "__path__ = extend_path(__path__, __name__)",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def build_override_base_config(
-    repo_dir: Path,
-    *,
-    mode: str,
-    keyword: str | None,
-    source_url: str | None,
-    limit: int,
-    login_type: str,
-    cookies: str,
-    output_dir: Path,
-) -> str:
-    defaults = load_base_config(repo_dir)
-    lines = [
-        "from __future__ import annotations",
-        "import importlib.util",
-        "from pathlib import Path",
-        "",
-        f"_CONFIG_PATH = Path(r'''{(repo_dir / 'config' / 'base_config.py').as_posix()}''')",
-        "_SPEC = importlib.util.spec_from_file_location('_media_base_config', _CONFIG_PATH)",
-        "if _SPEC is None or _SPEC.loader is None:",
-        "    raise RuntimeError(f'unable to load upstream MediaCrawler config: {_CONFIG_PATH}')",
-        "_MODULE = importlib.util.module_from_spec(_SPEC)",
-        "_SPEC.loader.exec_module(_MODULE)",
-        "",
-    ]
-    for name in sorted(defaults):
-        lines.append(f"{name} = getattr(_MODULE, {name!r})")
-    overrides: dict[str, Any] = {
-        "PLATFORM": "xhs",
-        "LOGIN_TYPE": login_type,
-        "COOKIES": cookies,
-        "CRAWLER_TYPE": "search" if mode == "search" else "detail",
-        "CRAWLER_MAX_NOTES_COUNT": max(limit, 1),
-        "SAVE_DATA_OPTION": "json",
-        "SAVE_DATA_PATH": str(output_dir),
-        "ENABLE_GET_COMMENTS": False,
-        "ENABLE_GET_SUB_COMMENTS": False,
-        "ENABLE_GET_MEIDAS": False,
-        "KEYWORDS": keyword or "",
-        "XHS_SPECIFIED_NOTE_URL_LIST": [source_url] if source_url else [],
-    }
-    for name, value in overrides.items():
-        lines.append(f"{name} = {value!r}")
-    lines.append("")
-    return "\n".join(lines)
 
 
 def collect_saved_items(output_dir: Path) -> list[dict[str, Any]]:
@@ -228,10 +157,30 @@ def extract_note_id(source_url: str) -> str:
     return path.split("/")[-1]
 
 
-def build_start_command(args: argparse.Namespace) -> list[str]:
+def build_start_command(args: argparse.Namespace, output_dir: Path) -> list[str]:
     command = list(args.start_command)
-    command.extend(["--lt", args.login_type, "--type", "search" if args.mode == "search" else "detail"])
-    if args.mode == "fetch":
+    crawler_type = "search" if args.mode == "search" else "detail"
+    command.extend(
+        [
+            "--lt",
+            args.login_type,
+            "--type",
+            crawler_type,
+            "--save_data_option",
+            "json",
+            "--save_data_path",
+            str(output_dir),
+            "--get_comment",
+            "false",
+            "--get_sub_comment",
+            "false",
+        ]
+    )
+    if args.cookies:
+        command.extend(["--cookies", args.cookies])
+    if args.mode == "search":
+        command.extend(["--keywords", args.keyword or ""])
+    else:
         command.extend(["--specified_id", args.source_url])
     return command
 
@@ -243,39 +192,22 @@ def main() -> int:
         raise RuntimeError(f"managed MediaCrawler checkout does not exist: {repo_dir}")
 
     with tempfile.TemporaryDirectory(prefix="mediacrawler-xhs-") as temp_dir:
-        temp_path = Path(temp_dir)
-        config_dir = temp_path / "config"
-        output_dir = temp_path / "output"
-        config_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(temp_dir) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        (config_dir / "__init__.py").write_text(build_override_config(), encoding="utf-8")
-        (config_dir / "base_config.py").write_text(
-            build_override_base_config(
-                repo_dir=repo_dir,
-                mode=args.mode,
-                keyword=args.keyword,
-                source_url=args.source_url,
-                limit=args.limit,
-                login_type=args.login_type,
-                cookies=args.cookies,
-                output_dir=output_dir,
-            ),
-            encoding="utf-8",
-        )
-
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join([str(temp_path), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
         completed = subprocess.run(
-            build_start_command(args),
+            build_start_command(args, output_dir),
             cwd=repo_dir,
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if completed.returncode != 0:
-            sys.stderr.write(completed.stderr[-4000:])
+            stderr_tail = (completed.stderr or completed.stdout or "")[-4000:]
+            sys.stderr.write(stderr_tail)
             return completed.returncode
 
         items = collect_saved_items(output_dir)

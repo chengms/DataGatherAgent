@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS fetched_article (
     job_id INTEGER NOT NULL,
     keyword TEXT NOT NULL,
     platform TEXT NOT NULL,
+    source_engine TEXT NOT NULL DEFAULT '',
+    content_kind TEXT NOT NULL DEFAULT 'article',
     title TEXT NOT NULL,
     source_url TEXT NOT NULL,
     account_name TEXT NOT NULL,
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS fetched_article (
     comment_count INTEGER NOT NULL,
     content_text TEXT NOT NULL,
     source_id TEXT NOT NULL,
+    comments_json TEXT NOT NULL DEFAULT '[]',
     FOREIGN KEY(job_id) REFERENCES workflow_job(id)
 );
 
@@ -52,6 +55,9 @@ CREATE TABLE IF NOT EXISTS ranked_article (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL,
     keyword TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT '',
+    source_engine TEXT NOT NULL DEFAULT '',
+    content_kind TEXT NOT NULL DEFAULT 'article',
     title TEXT NOT NULL,
     source_url TEXT NOT NULL,
     account_name TEXT NOT NULL,
@@ -72,11 +78,25 @@ CREATE TABLE IF NOT EXISTS ranked_article (
 def init_db() -> None:
     with db_cursor() as (_, cursor):
         cursor.executescript(SCHEMA_SQL)
-        columns = {row[1] for row in cursor.execute("PRAGMA table_info(workflow_job)").fetchall()}
-        if "fetch_source" not in columns:
+        workflow_columns = {row[1] for row in cursor.execute("PRAGMA table_info(workflow_job)").fetchall()}
+        if "fetch_source" not in workflow_columns:
             cursor.execute(
                 "ALTER TABLE workflow_job ADD COLUMN fetch_source TEXT NOT NULL DEFAULT 'mock_wechat_fetch'"
             )
+        fetched_columns = {row[1] for row in cursor.execute("PRAGMA table_info(fetched_article)").fetchall()}
+        if "source_engine" not in fetched_columns:
+            cursor.execute("ALTER TABLE fetched_article ADD COLUMN source_engine TEXT NOT NULL DEFAULT ''")
+        if "content_kind" not in fetched_columns:
+            cursor.execute("ALTER TABLE fetched_article ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article'")
+        if "comments_json" not in fetched_columns:
+            cursor.execute("ALTER TABLE fetched_article ADD COLUMN comments_json TEXT NOT NULL DEFAULT '[]'")
+        ranked_columns = {row[1] for row in cursor.execute("PRAGMA table_info(ranked_article)").fetchall()}
+        if "platform" not in ranked_columns:
+            cursor.execute("ALTER TABLE ranked_article ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+        if "source_engine" not in ranked_columns:
+            cursor.execute("ALTER TABLE ranked_article ADD COLUMN source_engine TEXT NOT NULL DEFAULT ''")
+        if "content_kind" not in ranked_columns:
+            cursor.execute("ALTER TABLE ranked_article ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article'")
 
 
 _initialized = False

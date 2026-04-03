@@ -25,6 +25,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-install", action="store_true", help="Skip dependency installation and only prepare/start services.")
     parser.add_argument("--skip-wechat-login", action="store_true", help="Skip the WeChat QR login step.")
     parser.add_argument("--skip-xhs-login", action="store_true", help="Skip the Xiaohongshu QR login step.")
+    parser.add_argument("--skip-weibo-login", action="store_true", help="Skip the Weibo QR login step.")
+    parser.add_argument("--skip-douyin-login", action="store_true", help="Skip the Douyin QR login step.")
+    parser.add_argument("--skip-bilibili-login", action="store_true", help="Skip the Bilibili QR login step.")
     return parser.parse_args()
 
 
@@ -90,8 +93,12 @@ def stop_service_temp(service: dict, process: subprocess.Popen[str]) -> None:
     manage_services.log(f"stopped temporary {service['name']} process")
 
 
-def run_login_script(script_name: str) -> None:
-    manage_services.run_command([sys.executable, f"scripts/{script_name}"], ROOT_DIR, os.environ.copy())
+def run_login_script(script_name: str, *script_args: str) -> None:
+    manage_services.run_command(
+        [sys.executable, f"scripts/{script_name}", *script_args],
+        ROOT_DIR,
+        os.environ.copy(),
+    )
 
 
 def current_global_env() -> dict[str, str]:
@@ -145,7 +152,22 @@ def main() -> int:
             xhs_cookie = current_service_env("mediacrawler_xhs").get("XHS_MEDIACRAWLER_COOKIES", "").strip()
             if not xhs_cookie:
                 manage_services.log("starting Xiaohongshu terminal login")
-                run_login_script("xhs_login_only.py")
+                run_login_script("mediacrawler_terminal_login.py", "--platform", "xhs")
+        if not args.skip_weibo_login:
+            weibo_cookie = current_service_env("mediacrawler_xhs").get("WEIBO_MEDIACRAWLER_COOKIES", "").strip()
+            if not weibo_cookie:
+                manage_services.log("starting Weibo terminal login")
+                run_login_script("mediacrawler_terminal_login.py", "--platform", "weibo")
+        if not args.skip_douyin_login:
+            douyin_cookie = current_service_env("mediacrawler_xhs").get("DY_MEDIACRAWLER_COOKIES", "").strip()
+            if not douyin_cookie:
+                manage_services.log("starting Douyin terminal login")
+                run_login_script("mediacrawler_terminal_login.py", "--platform", "douyin")
+        if not args.skip_bilibili_login:
+            bilibili_cookie = current_service_env("mediacrawler_xhs").get("BILI_MEDIACRAWLER_COOKIES", "").strip()
+            if not bilibili_cookie:
+                manage_services.log("starting Bilibili terminal login")
+                run_login_script("mediacrawler_terminal_login.py", "--platform", "bilibili")
 
         manage_services.log("starting full stack")
         manage_services.start_prepared_services(

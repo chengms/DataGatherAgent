@@ -18,6 +18,9 @@ class RankingService:
         )
         return RankedArticle(
             keyword=article.keyword,
+            platform=article.platform,
+            source_engine=article.source_engine,
+            content_kind=article.content_kind,
             title=article.title,
             source_url=article.source_url,
             account_name=article.account_name,

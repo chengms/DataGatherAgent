@@ -6,6 +6,28 @@ from app.schemas.workflow import DiscoveryCandidate, FetchedArticle, RankedArtic
 
 
 class WorkflowRepository:
+    def _dump_comments_json(self, article: FetchedArticle) -> str:
+        return json.dumps([item.model_dump() for item in article.comments], ensure_ascii=False)
+
+    def _load_comments_json(self, raw: str | None) -> list[dict]:
+        if not raw:
+            return []
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(payload, list):
+            normalized: list[dict] = []
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    continue
+                normalized.append(item)
+            return normalized
+        return []
+
     def create_job(self, payload: WorkflowPreviewRequest) -> int:
         created_at = datetime.now(UTC).isoformat()
         selected_platforms = payload.selected_platforms()
@@ -87,15 +109,17 @@ class WorkflowRepository:
             cursor.executemany(
                 """
                 INSERT INTO fetched_article (
-                    job_id, keyword, platform, title, source_url, account_name, publish_time,
-                    read_count, comment_count, content_text, source_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name, publish_time,
+                    read_count, comment_count, content_text, source_id, comments_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         job_id,
                         item.keyword,
                         item.platform,
+                        item.source_engine,
+                        item.content_kind,
                         item.title,
                         item.source_url,
                         item.account_name,
@@ -104,6 +128,7 @@ class WorkflowRepository:
                         item.comment_count,
                         item.content_text,
                         item.source_id,
+                        self._dump_comments_json(item),
                     )
                     for item in articles
                 ],
@@ -114,15 +139,18 @@ class WorkflowRepository:
             cursor.executemany(
                 """
                 INSERT INTO ranked_article (
-                    job_id, keyword, title, source_url, account_name, publish_time,
+                    job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name, publish_time,
                     read_count, comment_count, relevance_score, popularity_score,
                     freshness_score, total_score, score_reason, rank_position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         job_id,
                         item.keyword,
+                        item.platform,
+                        item.source_engine,
+                        item.content_kind,
                         item.title,
                         item.source_url,
                         item.account_name,
@@ -157,6 +185,7 @@ class WorkflowRepository:
             rows = cursor.execute(
                 """
                 SELECT keyword, title, source_url, account_name, publish_time, read_count, comment_count,
+                       platform, source_engine, content_kind,
                        relevance_score, popularity_score, freshness_score, total_score, score_reason, rank_position
                 FROM ranked_article
                 WHERE job_id = ?
@@ -165,6 +194,72 @@ class WorkflowRepository:
                 (job_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def search_fetched_articles(
+        self,
+        *,
+        keyword: str | None = None,
+        platform: str | None = None,
+        content_kind: str | None = None,
+        job_id: int | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[int, list[dict]]:
+        where_clauses: list[str] = []
+        params: list[object] = []
+        if keyword:
+            where_clauses.append(
+                "(title LIKE ? OR content_text LIKE ? OR account_name LIKE ? OR keyword LIKE ? OR source_url LIKE ?)"
+            )
+            needle = f"%{keyword}%"
+            params.extend([needle, needle, needle, needle, needle])
+        if platform:
+            where_clauses.append("platform = ?")
+            params.append(platform)
+        if content_kind:
+            where_clauses.append("content_kind = ?")
+            params.append(content_kind)
+        if job_id is not None:
+            where_clauses.append("job_id = ?")
+            params.append(job_id)
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        with db_cursor() as (_, cursor):
+            total = cursor.execute(
+                f"SELECT COUNT(1) AS c FROM fetched_article {where_sql}",
+                tuple(params),
+            ).fetchone()["c"]
+            rows = cursor.execute(
+                f"""
+                SELECT id, job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name,
+                       publish_time, read_count, comment_count, content_text, source_id, comments_json
+                FROM fetched_article
+                {where_sql}
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, limit, offset),
+            ).fetchall()
+        items = [dict(row) for row in rows]
+        for item in items:
+            item["comments"] = self._load_comments_json(item.pop("comments_json", "[]"))
+        return int(total), items
+
+    def get_fetched_article(self, article_id: int) -> dict | None:
+        with db_cursor() as (_, cursor):
+            row = cursor.execute(
+                """
+                SELECT id, job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name,
+                       publish_time, read_count, comment_count, content_text, source_id, comments_json
+                FROM fetched_article
+                WHERE id = ?
+                """,
+                (article_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["comments"] = self._load_comments_json(item.pop("comments_json", "[]"))
+        return item
 
 
 workflow_repository = WorkflowRepository()

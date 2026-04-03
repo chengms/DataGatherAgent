@@ -35,4 +35,4 @@ def health() -> dict[str, str]:
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index_v2.html")

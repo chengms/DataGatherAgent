@@ -1,6 +1,8 @@
 from app.db.init_db import ensure_db_initialized
-from app.core.exceptions import FetchRequestError, JobNotFoundError, SearchRequestError
+from app.core.exceptions import FetchRequestError, JobNotFoundError, NotFoundError, SearchRequestError
 from app.schemas.workflow import (
+    FetchedArticleRecord,
+    FetchedArticleSearchResponse,
     WorkflowJobDetail,
     WorkflowJobSummary,
     WorkflowPreviewRequest,
@@ -51,7 +53,7 @@ class WorkflowService:
         return ",".join(platforms)
 
     def _job_source_label(self, payload: WorkflowPreviewRequest, index: int) -> str:
-        if index == 0 and payload.discovery_source and payload.fetch_source and len(self._resolve_platforms(payload)) == 1:
+        if payload.discovery_source and payload.fetch_source and len(self._resolve_platforms(payload)) == 1:
             return payload.discovery_source if index == 0 else payload.fetch_source
         labels: list[str] = []
         for platform in self._resolve_platforms(payload):
@@ -67,53 +69,64 @@ class WorkflowService:
         job_id = workflow_repository.create_job(payload)
 
         discovery_candidates = []
-        fetch_plan: list[tuple[str, object]] = []
-        for platform in self._resolve_platforms(payload):
-            discovery_source, fetch_source = self._resolve_sources_for_platform(payload, platform)
-            discovery_adapter = adapter_registry.get_discovery(discovery_source)
-            fetch_adapter = adapter_registry.get_fetch(fetch_source)
-            for keyword in payload.keywords:
+        fetched_articles = []
+        hot_articles = []
+        try:
+            fetch_plan: list[tuple[str, object]] = []
+            for platform in self._resolve_platforms(payload):
+                discovery_source, fetch_source = self._resolve_sources_for_platform(payload, platform)
+                discovery_adapter = adapter_registry.get_discovery(discovery_source)
+                fetch_adapter = adapter_registry.get_fetch(fetch_source)
+                for keyword in payload.keywords:
+                    try:
+                        candidates = discovery_adapter.discover(keyword=keyword, limit=payload.limit)
+                    except SearchRequestError:
+                        fallback_source = self._fallback_discovery_source(platform)
+                        if not payload.fallback_to_mock or fallback_source is None:
+                            raise
+                        discovery_adapter = adapter_registry.get_discovery(fallback_source)
+                        candidates = discovery_adapter.discover(
+                            keyword=keyword,
+                            limit=payload.limit,
+                        )
+                        fetch_adapter = adapter_registry.get_fetch(self._fallback_fetch_source(platform) or fetch_source)
+                    discovery_candidates.extend(candidates)
+                    fetch_plan.extend((platform, fetch_adapter, candidate) for candidate in candidates)
+            workflow_repository.save_discovery_candidates(job_id, discovery_candidates)
+
+            for platform, fetch_adapter, candidate in fetch_plan:
                 try:
-                    candidates = discovery_adapter.discover(keyword=keyword, limit=payload.limit)
-                except SearchRequestError:
-                    fallback_source = self._fallback_discovery_source(platform)
+                    article = fetch_adapter.fetch_article(candidate)
+                except FetchRequestError:
+                    fallback_source = self._fallback_fetch_source(platform)
                     if not payload.fallback_to_mock or fallback_source is None:
                         raise
-                    discovery_adapter = adapter_registry.get_discovery(fallback_source)
-                    candidates = discovery_adapter.discover(
-                        keyword=keyword,
-                        limit=payload.limit,
-                    )
-                    fetch_adapter = adapter_registry.get_fetch(self._fallback_fetch_source(platform) or fetch_source)
-                discovery_candidates.extend(candidates)
-                fetch_plan.extend((platform, fetch_adapter, candidate) for candidate in candidates)
-        workflow_repository.save_discovery_candidates(job_id, discovery_candidates)
+                    article = adapter_registry.get_fetch(fallback_source).fetch_article(candidate)
+                fetched_articles.append(article)
+            workflow_repository.save_fetched_articles(job_id, fetched_articles)
 
-        fetched_articles = []
-        for platform, fetch_adapter, candidate in fetch_plan:
-            try:
-                article = fetch_adapter.fetch_article(candidate)
-            except FetchRequestError:
-                fallback_source = self._fallback_fetch_source(platform)
-                if not payload.fallback_to_mock or fallback_source is None:
-                    raise
-                article = adapter_registry.get_fetch(fallback_source).fetch_article(candidate)
-            fetched_articles.append(article)
-        workflow_repository.save_fetched_articles(job_id, fetched_articles)
-
-        ranked_articles = [
-            ranking_service.score(article=article, weights=payload.ranking)
-            for article in fetched_articles
-        ]
-        ranked_articles.sort(key=lambda item: item.total_score, reverse=True)
-        hot_articles = ranked_articles[: payload.top_k]
-        workflow_repository.save_ranked_articles(job_id, hot_articles)
-        workflow_repository.complete_job(
-            job_id=job_id,
-            discovered_count=len(discovery_candidates),
-            fetched_count=len(fetched_articles),
-            ranked_count=len(hot_articles),
-        )
+            ranked_articles = [
+                ranking_service.score(article=article, weights=payload.ranking)
+                for article in fetched_articles
+            ]
+            ranked_articles.sort(key=lambda item: item.total_score, reverse=True)
+            hot_articles = ranked_articles[: payload.top_k]
+            workflow_repository.save_ranked_articles(job_id, hot_articles)
+            workflow_repository.complete_job(
+                job_id=job_id,
+                discovered_count=len(discovery_candidates),
+                fetched_count=len(fetched_articles),
+                ranked_count=len(hot_articles),
+            )
+        except Exception:
+            workflow_repository.complete_job(
+                job_id=job_id,
+                discovered_count=len(discovery_candidates),
+                fetched_count=len(fetched_articles),
+                ranked_count=len(hot_articles),
+                status="failed",
+            )
+            raise
 
         return WorkflowPreviewResponse(
             job_id=job_id,
@@ -145,6 +158,43 @@ class WorkflowService:
                 "hot_articles": ranked_rows,
             }
         )
+
+    def search_fetched_articles(
+        self,
+        *,
+        keyword: str | None = None,
+        platform: str | None = None,
+        content_kind: str | None = None,
+        job_id: int | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> FetchedArticleSearchResponse:
+        ensure_db_initialized()
+        normalized_keyword = (keyword or "").strip() or None
+        normalized_platform = (platform or "").strip() or None
+        normalized_kind = (content_kind or "").strip() or None
+        safe_page = max(1, int(page))
+        safe_page_size = max(1, min(100, int(page_size)))
+        offset = (safe_page - 1) * safe_page_size
+        total, items = workflow_repository.search_fetched_articles(
+            keyword=normalized_keyword,
+            platform=normalized_platform,
+            content_kind=normalized_kind,
+            job_id=job_id,
+            offset=offset,
+            limit=safe_page_size,
+        )
+        return FetchedArticleSearchResponse(
+            total=total,
+            items=[FetchedArticleRecord.model_validate(item) for item in items],
+        )
+
+    def get_fetched_article(self, article_id: int) -> FetchedArticleRecord:
+        ensure_db_initialized()
+        row = workflow_repository.get_fetched_article(article_id)
+        if row is None:
+            raise NotFoundError(f"Article with id {article_id} not found", "Article")
+        return FetchedArticleRecord.model_validate(row)
 
 
 workflow_service = WorkflowService()

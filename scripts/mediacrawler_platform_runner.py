@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import subprocess
@@ -48,8 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keyword")
     parser.add_argument("--source-url")
     parser.add_argument("--limit", type=int, default=10)
-    parser.add_argument("--login-type", default="qrcode")
-    parser.add_argument("--cookies", default="")
+    parser.add_argument("--login-type", default=None)
+    parser.add_argument("--cookies", default=None)
     parser.add_argument(
         "--start-command",
         nargs="+",
@@ -64,84 +63,60 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_base_config(repo_dir: Path) -> dict[str, Any]:
-    config_path = repo_dir / "config" / "base_config.py"
-    spec = importlib.util.spec_from_file_location("media_base_config", config_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"unable to load base config from {config_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return {name: getattr(module, name) for name in dir(module) if name.isupper()}
-
-
-def build_override_config_init() -> str:
-    return "from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n"
-
-
-def build_override_base_config(
-    repo_dir: Path,
-    *,
-    platform: str,
-    mode: str,
-    keyword: str | None,
-    source_url: str | None,
-    limit: int,
-    login_type: str,
-    cookies: str,
-    output_dir: Path,
-) -> str:
-    defaults = load_base_config(repo_dir)
-    spec = PLATFORM_SPECS[platform]
-    lines = [
-        "from __future__ import annotations",
-        "import importlib.util",
-        "from pathlib import Path",
-        "",
-        f"_CONFIG_PATH = Path(r'''{(repo_dir / 'config' / 'base_config.py').as_posix()}''')",
-        "_SPEC = importlib.util.spec_from_file_location('_media_base_config', _CONFIG_PATH)",
-        "if _SPEC is None or _SPEC.loader is None:",
-        "    raise RuntimeError(f'unable to load upstream MediaCrawler config: {_CONFIG_PATH}')",
-        "_MODULE = importlib.util.module_from_spec(_SPEC)",
-        "_SPEC.loader.exec_module(_MODULE)",
-        "",
-    ]
-    for name in sorted(defaults):
-        lines.append(f"{name} = getattr(_MODULE, {name!r})")
-    overrides: dict[str, Any] = {
-        "PLATFORM": spec["platform_arg"],
-        "LOGIN_TYPE": login_type,
-        "COOKIES": cookies,
-        "CRAWLER_TYPE": "search" if mode == "search" else "detail",
-        "CRAWLER_MAX_NOTES_COUNT": max(limit, 1),
-        "SAVE_DATA_OPTION": "json",
-        "SAVE_DATA_PATH": str(output_dir),
-        "ENABLE_GET_COMMENTS": False,
-        "ENABLE_GET_SUB_COMMENTS": False,
-        "ENABLE_GET_MEIDAS": False,
-        "KEYWORDS": keyword or "",
-        spec["specified_var"]: [source_url] if source_url else [],
+def resolve_login_type_and_cookies(args: argparse.Namespace) -> tuple[str, str]:
+    login_env = {
+        "weibo": "WEIBO_MEDIACRAWLER_LOGIN_TYPE",
+        "douyin": "DY_MEDIACRAWLER_LOGIN_TYPE",
+        "bilibili": "BILI_MEDIACRAWLER_LOGIN_TYPE",
+        "xiaohongshu": "XHS_MEDIACRAWLER_LOGIN_TYPE",
     }
-    for name, value in overrides.items():
-        lines.append(f"{name} = {value!r}")
-    lines.append("")
-    return "\n".join(lines)
+    cookie_env = {
+        "weibo": "WEIBO_MEDIACRAWLER_COOKIES",
+        "douyin": "DY_MEDIACRAWLER_COOKIES",
+        "bilibili": "BILI_MEDIACRAWLER_COOKIES",
+        "xiaohongshu": "XHS_MEDIACRAWLER_COOKIES",
+    }
+    login_type = str(args.login_type or os.getenv(login_env[args.platform], "qrcode")).strip() or "qrcode"
+    cookies = str(args.cookies if args.cookies is not None else os.getenv(cookie_env[args.platform], "")).strip()
+    return login_type, cookies
 
 
-def collect_saved_items(output_dir: Path) -> list[dict[str, Any]]:
+def _extract_dict_items(payload: object) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("items", "data", "notes", "videos", "contents", "comments"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def collect_saved_payload(output_dir: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    contents: list[dict[str, Any]] = []
+    comments: list[dict[str, Any]] = []
     json_files = sorted(output_dir.rglob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
     for json_file in json_files:
         try:
             payload = json.loads(json_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        if isinstance(payload, dict):
-            for key in ("items", "data", "notes", "videos"):
-                value = payload.get(key)
-                if isinstance(value, list):
-                    return [item for item in value if isinstance(item, dict)]
-    return []
+        items = _extract_dict_items(payload)
+        if not items:
+            continue
+        lower_name = json_file.name.lower()
+        if "_comments_" in lower_name:
+            comments.extend(items)
+            continue
+        if "_contents_" in lower_name:
+            contents.extend(items)
+            continue
+        sample = items[0]
+        if any(key in sample for key in ("comment_id", "parent_comment_id", "sub_comment_count")):
+            comments.extend(items)
+        else:
+            contents.extend(items)
+    return contents, comments
 
 
 def nested_value(item: dict[str, Any], *keys: str) -> Any:
@@ -188,6 +163,11 @@ def normalize_datetime(value: Any) -> str:
                 )
             except ValueError:
                 pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(text, fmt).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+            except ValueError:
+                continue
         if text.isdigit():
             return normalize_datetime(int(text))
     if isinstance(value, (int, float)):
@@ -213,7 +193,7 @@ def unwrap_platform_item(platform: str, item: dict[str, Any]) -> dict[str, Any]:
 
 def build_source_url(platform: str, item: dict[str, Any], fallback_source_url: str = "") -> str:
     direct = (
-        first_text(item, "note_url", "url", "share_url", "content_url", "jump_url")
+        first_text(item, "note_url", "aweme_url", "video_url", "url", "share_url", "content_url", "jump_url")
         or nested_text(item, "share_info", "share_url")
     )
     if direct:
@@ -264,6 +244,7 @@ def build_snippet(item: dict[str, Any], title: str) -> str:
 def build_publish_time(item: dict[str, Any]) -> str:
     value = (
         item.get("time")
+        or item.get("create_date_time")
         or item.get("publish_time")
         or item.get("create_time")
         or item.get("create_date_time")
@@ -276,26 +257,106 @@ def build_publish_time(item: dict[str, Any]) -> str:
 
 def build_read_count(platform: str, item: dict[str, Any]) -> int:
     if platform == "weibo":
-        return coerce_int(item.get("attitudes_count"))
+        return coerce_int(item.get("attitudes_count") or item.get("liked_count"))
     if platform == "douyin":
-        return coerce_int(nested_value(item, "statistics", "digg_count") or item.get("digg_count"))
+        return coerce_int(nested_value(item, "statistics", "digg_count") or item.get("digg_count") or item.get("liked_count"))
     if platform == "bilibili":
-        return coerce_int(nested_value(item, "stat", "view") or item.get("play") or item.get("play_count"))
+        return coerce_int(
+            nested_value(item, "stat", "view")
+            or item.get("play")
+            or item.get("play_count")
+            or item.get("video_play_count")
+        )
     return coerce_int(item.get("liked_count"))
 
 
 def build_comment_count(platform: str, item: dict[str, Any]) -> int:
     if platform == "bilibili":
-        return coerce_int(nested_value(item, "stat", "reply") or item.get("comment") or item.get("comment_count"))
-    return coerce_int(item.get("comment_count") or item.get("comments_count") or nested_value(item, "statistics", "comment_count"))
+        return coerce_int(
+            nested_value(item, "stat", "reply")
+            or item.get("comment")
+            or item.get("comment_count")
+            or item.get("video_comment")
+        )
+    return coerce_int(
+        item.get("comment_count")
+        or item.get("comments_count")
+        or nested_value(item, "statistics", "comment_count")
+    )
 
 
 def build_source_id(platform: str, item: dict[str, Any], source_url: str) -> str:
-    direct = first_text(item, "note_id", "id", "mid", "aweme_id", "bvid", "aid")
+    direct = first_text(item, "note_id", "id", "mid", "aweme_id", "video_id", "bvid", "aid")
     if direct:
         return direct
     path = urlparse(source_url).path.rstrip("/")
     return path.split("/")[-1] if path else ""
+
+
+def infer_content_kind(platform: str, item: dict[str, Any], source_url: str) -> str:
+    raw = first_text(item, "content_kind", "type", "video_type", "aweme_type")
+    if isinstance(raw, str):
+        low = raw.lower()
+        if "video" in low:
+            return "video"
+        if "note" in low:
+            return "note"
+    if platform in {"douyin", "bilibili"}:
+        return "video"
+    if platform == "xiaohongshu":
+        return "note"
+    if "video" in source_url:
+        return "video"
+    return "article"
+
+
+def content_id_from_url(platform: str, source_url: str) -> str:
+    parsed = urlparse(source_url)
+    path = parsed.path.rstrip("/")
+    if not path:
+        return ""
+    token = path.split("/")[-1]
+    if platform == "bilibili" and token.startswith("av"):
+        return token[2:]
+    return token
+
+
+def filter_comments_by_source_id(platform: str, source_id: str, comments: list[dict[str, Any]], limit: int = 50) -> list[dict[str, Any]]:
+    if not source_id:
+        return []
+    id_fields = {
+        "xiaohongshu": ("note_id",),
+        "weibo": ("note_id",),
+        "douyin": ("aweme_id",),
+        "bilibili": ("video_id",),
+    }.get(platform, ("note_id", "aweme_id", "video_id"))
+    matched: list[dict[str, Any]] = []
+    for item in comments:
+        for field in id_fields:
+            if str(item.get(field) or "") == source_id:
+                matched.append(item)
+                break
+        if len(matched) >= limit:
+            break
+    return matched
+
+
+def normalize_comment_items(comments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in comments:
+        content = first_text(item, "content", "text")
+        if not content:
+            continue
+        normalized.append(
+            {
+                "nickname": first_text(item, "nickname", "user_name", "screen_name") or "匿名用户",
+                "content": content,
+                "publish_time": normalize_datetime(item.get("create_date_time") or item.get("publish_time") or item.get("create_time")),
+                "like_count": coerce_int(item.get("like_count") or item.get("comment_like_count") or item.get("digg_count")),
+                "sub_comment_count": coerce_int(item.get("sub_comment_count")),
+            }
+        )
+    return normalized
 
 
 def normalize_items(platform: str, keyword: str, items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -314,6 +375,7 @@ def normalize_items(platform: str, keyword: str, items: list[dict[str, Any]], li
                 "snippet": build_snippet(item, title),
                 "source_url": source_url,
                 "account_name": build_account_name(platform, item),
+                "content_kind": infer_content_kind(platform, item, source_url),
             }
         )
         if len(normalized) >= limit:
@@ -321,10 +383,22 @@ def normalize_items(platform: str, keyword: str, items: list[dict[str, Any]], li
     return normalized
 
 
-def normalize_fetch_item(platform: str, item: dict[str, Any], fallback_source_url: str) -> dict[str, Any]:
-    unwrapped = unwrap_platform_item(platform, item)
+def pick_best_content_item(platform: str, contents: list[dict[str, Any]], source_url: str) -> dict[str, Any]:
+    if not contents:
+        return {}
+    source_id = content_id_from_url(platform, source_url)
+    if source_id:
+        for item in contents:
+            if build_source_id(platform, item, build_source_url(platform, item, source_url)) == source_id:
+                return item
+    return contents[0]
+
+
+def normalize_fetch_item(platform: str, contents: list[dict[str, Any]], comments: list[dict[str, Any]], fallback_source_url: str) -> dict[str, Any]:
+    unwrapped = unwrap_platform_item(platform, pick_best_content_item(platform, contents, fallback_source_url))
     default_title = PLATFORM_SPECS[platform]["title_default"]
     source_url = build_source_url(platform, unwrapped, fallback_source_url)
+    source_id = build_source_id(platform, unwrapped, source_url)
     return {
         "title": build_title(platform, unwrapped, default_title),
         "source_url": source_url,
@@ -333,23 +407,38 @@ def normalize_fetch_item(platform: str, item: dict[str, Any], fallback_source_ur
         "read_count": build_read_count(platform, unwrapped),
         "comment_count": build_comment_count(platform, unwrapped),
         "content_text": build_snippet(unwrapped, build_title(platform, unwrapped, default_title)),
-        "source_id": build_source_id(platform, unwrapped, source_url),
+        "source_id": source_id,
+        "content_kind": infer_content_kind(platform, unwrapped, source_url),
+        "comments": normalize_comment_items(filter_comments_by_source_id(platform, source_id, comments)),
     }
 
 
-def build_start_command(args: argparse.Namespace) -> list[str]:
+def build_start_command(args: argparse.Namespace, output_dir: Path, login_type: str, cookies: str) -> list[str]:
     command = list(args.start_command)
+    crawler_type = "search" if args.mode == "search" else "detail"
     command.extend(
         [
             "--platform",
             PLATFORM_SPECS[args.platform]["platform_arg"],
             "--lt",
-            args.login_type,
+            login_type,
             "--type",
-            "search" if args.mode == "search" else "detail",
+            crawler_type,
+            "--save_data_option",
+            "json",
+            "--save_data_path",
+            str(output_dir),
+            "--get_comment",
+            "true",
+            "--get_sub_comment",
+            "false",
         ]
     )
-    if args.mode == "fetch":
+    if cookies:
+        command.extend(["--cookies", cookies])
+    if args.mode == "search":
+        command.extend(["--keywords", args.keyword or ""])
+    else:
         command.extend(["--specified_id", args.source_url])
     return command
 
@@ -361,50 +450,34 @@ def main() -> int:
         raise RuntimeError(f"managed MediaCrawler checkout does not exist: {repo_dir}")
 
     with tempfile.TemporaryDirectory(prefix=f"mediacrawler-{args.platform}-") as temp_dir:
-        temp_path = Path(temp_dir)
-        config_dir = temp_path / "config"
-        output_dir = temp_path / "output"
-        config_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(temp_dir) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        (config_dir / "__init__.py").write_text(build_override_config_init(), encoding="utf-8")
-        (config_dir / "base_config.py").write_text(
-            build_override_base_config(
-                repo_dir=repo_dir,
-                platform=args.platform,
-                mode=args.mode,
-                keyword=args.keyword,
-                source_url=args.source_url,
-                limit=args.limit,
-                login_type=args.login_type,
-                cookies=args.cookies,
-                output_dir=output_dir,
-            ),
-            encoding="utf-8",
-        )
-
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join([str(temp_path), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+        login_type, cookies = resolve_login_type_and_cookies(args)
         completed = subprocess.run(
-            build_start_command(args),
+            build_start_command(args, output_dir, login_type, cookies),
             cwd=repo_dir,
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if completed.returncode != 0:
-            sys.stderr.write(completed.stderr[-4000:])
+            stderr_tail = (completed.stderr or completed.stdout or "")[-4000:]
+            sys.stderr.write(stderr_tail)
             return completed.returncode
 
-        items = collect_saved_items(output_dir)
+        contents, comments = collect_saved_payload(output_dir)
         if args.mode == "search":
-            payload = {"items": normalize_items(args.platform, args.keyword or "", items, args.limit)}
+            payload = {"items": normalize_items(args.platform, args.keyword or "", contents, args.limit)}
         else:
             payload = {
                 "item": normalize_fetch_item(
                     args.platform,
-                    next((item for item in items if isinstance(item, dict)), {}),
+                    contents,
+                    comments,
                     args.source_url or "",
                 )
             }

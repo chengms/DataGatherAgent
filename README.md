@@ -1,11 +1,12 @@
 # DataGatherAgent
 
-统一内容采集与排序工作台，当前接入了两类外部能力：
+统一内容采集与排序工作台，当前通过两类外部能力覆盖多平台采集：
 
 - 微信公众号：`wechat-article-exporter`
-- 小红书：`MediaCrawler`
+- 小红书 / 微博 / 抖音 / B站：`MediaCrawler`
 
-这两个外部仓库都作为受管 checkout 放在 `external_tools/` 下，不直接改上游源码。登录、配置写回、启动编排都在当前仓库里完成。
+这些外部仓库都作为受管 checkout 放在 `external_tools/` 下，不直接改上游源码。登录、配置写回、启动编排都在当前仓库里完成。
+控制台支持按平台勾选采集范围，后端会自动选择对应的平台采集链路。
 
 ## 最快开始
 
@@ -75,6 +76,12 @@ Linux/macOS/WSL:
 - `WECHAT_EXPORTER_API_KEY`
 - `XHS_MEDIACRAWLER_COOKIES`
 - 必要时切换 `XHS_MEDIACRAWLER_LOGIN_TYPE=cookie`
+
+工作流平台选择与策略：
+
+- 已接入：`wechat`、`xiaohongshu`、`weibo`、`douyin`、`bilibili`
+- 预留：`zhihu`
+- 预览请求默认按 `platforms` 字段逐平台运行，不需要手动传 adapter 名称
 
 ## 外部仓库策略
 

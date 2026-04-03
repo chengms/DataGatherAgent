@@ -5,7 +5,19 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-EXTERNAL_TOOLS_DIR = BASE_DIR / "external_tools"
+
+
+def _default_external_tools_dir() -> Path:
+    configured = os.getenv("DATA_GATHER_EXTERNAL_TOOLS_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    repo_level_dir = BASE_DIR.parent / "external_tools"
+    if repo_level_dir.exists():
+        return repo_level_dir.resolve()
+    return (BASE_DIR / "external_tools").resolve()
+
+
+EXTERNAL_TOOLS_DIR = _default_external_tools_dir()
 EXTERNAL_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
 
 

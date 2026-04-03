@@ -110,18 +110,22 @@ This MVP implements the workflow skeleton:
 4. AI relevance scoring
 5. hot article ranking
 
-Current adapters are mock implementations so the workflow can run end to end before integrating real WeChat search and article crawlers.
-
 The adapter layer now supports two integration modes:
 
 - in-process adapters, such as the current mock and lightweight web adapters
 - external-tool adapters, which are designed to call mature crawler repositories from a managed checkout on disk
 
-Scaffolded external discovery adapters are already registered for:
+Workflow preview requests now default to platform-driven source selection. The frontend uses this mode and only sends selected `platforms`.
 
-- `wechat_exporter_search`
-- `wechat_exporter_fetch`
-- `xiaohongshu_external_search`
+Current platform strategies:
+
+- `wechat` -> `wechat_exporter_search` + `wechat_exporter_fetch`
+- `xiaohongshu` -> `xiaohongshu_external_search` + `xiaohongshu_external_fetch`
+- `weibo` -> `weibo_external_search` + `weibo_external_fetch`
+- `douyin` -> `douyin_external_search` + `douyin_external_fetch`
+- `bilibili` -> `bilibili_external_search` + `bilibili_external_fetch`
+
+For single-platform API calls, you can still pass explicit `discovery_source` and `fetch_source`.
 
 `wechat_exporter_search` and `wechat_exporter_fetch` are now wired for service-mode integration against a self-hosted `wechat-article-exporter` instance.
 
@@ -158,10 +162,12 @@ The managed stack now covers two external repositories:
 - `wechat-article-exporter` as the WeChat service on port `3000`
 - `MediaCrawler` as the Xiaohongshu-oriented managed crawler service on port `8080`
 
-`xiaohongshu_external_search` now executes through a local wrapper script that runs inside the managed `MediaCrawler` checkout without editing upstream files. Optional runtime variables for that path are:
+`xiaohongshu_external_search` and `xiaohongshu_external_fetch` execute through a local wrapper script that runs inside the managed `MediaCrawler` checkout without editing upstream files. Optional runtime variables for that path are:
 
 - `XHS_MEDIACRAWLER_LOGIN_TYPE`
 - `XHS_MEDIACRAWLER_COOKIES`
+
+`weibo_external_*`, `douyin_external_*`, and `bilibili_external_*` run through `scripts/mediacrawler_platform_runner.py` using the same managed `MediaCrawler` checkout.
 
 `GET /api/discovery/sources` returns both discovery and fetch adapters with their `kind` and `live` flags.
 
@@ -169,11 +175,21 @@ Available discovery sources:
 
 - `mock_wechat_search`
 - `web_search_wechat`
+- `wechat_exporter_search`
+- `xiaohongshu_external_search`
+- `weibo_external_search`
+- `douyin_external_search`
+- `bilibili_external_search`
 
 Available fetch sources:
 
 - `mock_wechat_fetch`
 - `web_fetch_wechat`
+- `wechat_exporter_fetch`
+- `xiaohongshu_external_fetch`
+- `weibo_external_fetch`
+- `douyin_external_fetch`
+- `bilibili_external_fetch`
 
 Workflow executions are persisted to SQLite.
 
