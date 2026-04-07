@@ -265,6 +265,66 @@ Semiconductor</textarea>
     </article>
   </div>
 
+  <div id="wechatLoginModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-mask" data-close-wechat-login="1"></div>
+    <article class="modal-panel qr-login-panel">
+      <div class="panel-head">
+        <div>
+          <h2>公众号扫码登录</h2>
+          <p id="wechatLoginMeta" class="subtle">二维码将在当前控制台直接显示，扫码后自动完成登录。</p>
+        </div>
+        <button id="closeWechatLoginButton" class="ghost-button tiny" type="button">关闭</button>
+      </div>
+      <div class="qr-login-layout">
+        <div class="qr-login-box">
+          <img id="wechatLoginQrImage" alt="公众号登录二维码" class="qr-login-image hidden">
+          <div id="wechatLoginQrPlaceholder" class="empty-state qr-login-placeholder">正在准备二维码...</div>
+        </div>
+        <div class="qr-login-side">
+          <p id="wechatLoginStatus" class="status-line">等待开始。</p>
+          <div class="qr-login-steps">
+            <p>1. 使用微信扫码。</p>
+            <p>2. 在手机里确认登录。</p>
+            <p>3. 控制台会自动保存登录状态并刷新平台状态。</p>
+          </div>
+          <div class="inline-actions">
+            <button id="refreshWechatLoginButton" class="primary-button" type="button">重新生成二维码</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div id="xhsLoginModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-mask" data-close-xhs-login="1"></div>
+    <article class="modal-panel qr-login-panel">
+      <div class="panel-head">
+        <div>
+          <h2>小红书无头登录</h2>
+          <p class="subtle">二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。</p>
+        </div>
+        <button id="closeXhsLoginButton" class="ghost-button tiny" type="button">关闭</button>
+      </div>
+      <div class="qr-login-layout">
+        <div class="qr-login-box">
+          <img id="xhsLoginQrImage" alt="小红书登录二维码" class="qr-login-image hidden">
+          <div id="xhsLoginQrPlaceholder" class="empty-state qr-login-placeholder">正在准备二维码...</div>
+        </div>
+        <div class="qr-login-side">
+          <p id="xhsLoginStatus" class="status-line">等待开始。</p>
+          <div class="qr-login-steps">
+            <p>1. 使用小红书 App 扫码。</p>
+            <p>2. 按提示确认登录。</p>
+            <p>3. 后台会自动保存 Cookie 并刷新平台状态。</p>
+          </div>
+          <div class="inline-actions">
+            <button id="refreshXhsLoginButton" class="primary-button" type="button">重新生成二维码</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+
   <script src="/assets/app_v2.js" defer></script>
 </body>
 </html>

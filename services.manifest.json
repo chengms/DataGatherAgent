@@ -10,7 +10,9 @@
       "requires": ["git", "corepack", "node"],
       "required_env": ["WECHAT_EXPORTER_API_KEY"],
       "env": {
-        "DEBUG_KEY": "data-gather-agent-wechat-debug"
+        "DEBUG_KEY": "data-gather-agent-wechat-debug",
+        "NITRO_KV_DRIVER": "fs",
+        "NITRO_KV_BASE": ".data/kv"
       },
       "restart_delay_seconds": 5,
       "healthcheck_interval_seconds": 30,

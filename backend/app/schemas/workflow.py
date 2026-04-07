@@ -183,3 +183,21 @@ class ServiceUpdateNotice(BaseModel):
 class UpdateNoticeResponse(BaseModel):
     checked_at: str | None = None
     items: list[ServiceUpdateNotice] = Field(default_factory=list)
+
+
+class WechatLoginSessionResponse(BaseModel):
+    session_id: str | None = None
+    status: str
+    message: str
+    qrcode_url: str | None = None
+    qrcode_revision: int = 0
+    auth_key_prefix: str | None = None
+
+
+class PlatformLoginSessionResponse(BaseModel):
+    session_id: str | None = None
+    platform: str
+    status: str
+    message: str
+    qrcode_data_url: str | None = None
+    auth_key_prefix: str | None = None

@@ -23,6 +23,21 @@ const state = {
   backendHealthy: null,
   updateNotices: [],
   updateCheckedAt: "",
+  wechatLogin: {
+    sessionId: "",
+    qrcodeUrl: "",
+    qrcodeRevision: 0,
+    status: "idle",
+    message: "",
+    pollTimer: 0,
+  },
+  xhsLogin: {
+    sessionId: "",
+    qrcodeDataUrl: "",
+    status: "idle",
+    message: "",
+    pollTimer: 0,
+  },
   activeWorkspaceTab: "hot",
   lastPreview: null,
   previewFilters: {
@@ -111,6 +126,19 @@ const elements = {
   modalSourceLinkWrap: document.getElementById("modalSourceLinkWrap"),
   modalContentText: document.getElementById("modalContentText"),
   modalComments: document.getElementById("modalComments"),
+  wechatLoginModal: document.getElementById("wechatLoginModal"),
+  closeWechatLoginButton: document.getElementById("closeWechatLoginButton"),
+  refreshWechatLoginButton: document.getElementById("refreshWechatLoginButton"),
+  wechatLoginMeta: document.getElementById("wechatLoginMeta"),
+  wechatLoginStatus: document.getElementById("wechatLoginStatus"),
+  wechatLoginQrImage: document.getElementById("wechatLoginQrImage"),
+  wechatLoginQrPlaceholder: document.getElementById("wechatLoginQrPlaceholder"),
+  xhsLoginModal: document.getElementById("xhsLoginModal"),
+  closeXhsLoginButton: document.getElementById("closeXhsLoginButton"),
+  refreshXhsLoginButton: document.getElementById("refreshXhsLoginButton"),
+  xhsLoginStatus: document.getElementById("xhsLoginStatus"),
+  xhsLoginQrImage: document.getElementById("xhsLoginQrImage"),
+  xhsLoginQrPlaceholder: document.getElementById("xhsLoginQrPlaceholder"),
 };
 
 function escapeHtml(value) {
@@ -417,6 +445,9 @@ function renderSourceCards() {
     const meta = getPlatformStateMeta(platform, capability);
     const ready = Boolean(capability?.runtimeReady && platform.supported);
     const live = Boolean(capability?.live && capability?.runtimeReady);
+    const showWechatLogin = platform.key === "wechat";
+    const wechatLoginLabel = capability?.serviceOnline ? "公众号扫码登录" : "先启动公众号服务";
+    const showXhsLogin = platform.key === "xiaohongshu";
     return `
       <article class="source-card${platform.supported ? "" : " disabled"}">
         <div class="source-top">
@@ -454,9 +485,39 @@ function renderSourceCards() {
             <dd>${capability?.lastCheckedAt ? formatDateTime(capability.lastCheckedAt) : "-"}</dd>
           </div>
         </dl>
+        ${showWechatLogin ? `
+          <div class="card-actions">
+            <button
+              type="button"
+              class="link-button"
+              data-open-wechat-login="1"
+              ${capability?.serviceOnline ? "" : "disabled"}
+            >${wechatLoginLabel}</button>
+          </div>
+        ` : ""}
+        ${showXhsLogin ? `
+          <div class="card-actions">
+            <button
+              type="button"
+              class="link-button"
+              data-open-xhs-login="1"
+            >小红书无头登录</button>
+          </div>
+        ` : ""}
       </article>
     `;
   }).join("");
+
+  elements.sourcesGrid.querySelectorAll("button[data-open-wechat-login]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openWechatLoginModal();
+    });
+  });
+  elements.sourcesGrid.querySelectorAll("button[data-open-xhs-login]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openXhsLoginModal();
+    });
+  });
 }
 
 function renderHeroSummary() {
@@ -951,6 +1012,251 @@ function hideModal() {
   elements.articleModal.setAttribute("aria-hidden", "true");
 }
 
+function clearWechatLoginPollTimer() {
+  if (state.wechatLogin.pollTimer) {
+    window.clearTimeout(state.wechatLogin.pollTimer);
+    state.wechatLogin.pollTimer = 0;
+  }
+}
+
+function renderWechatLoginModal() {
+  const loginState = state.wechatLogin;
+  elements.wechatLoginStatus.textContent = loginState.message || "等待开始。";
+  const hasQr = Boolean(loginState.qrcodeUrl);
+  elements.wechatLoginQrImage.classList.toggle("hidden", !hasQr);
+  elements.wechatLoginQrPlaceholder.classList.toggle("hidden", hasQr);
+  elements.wechatLoginQrPlaceholder.textContent = hasQr
+    ? ""
+    : (loginState.message || "正在准备二维码...");
+  if (hasQr) {
+    elements.wechatLoginQrImage.src = `${loginState.qrcodeUrl}?v=${loginState.qrcodeRevision}`;
+  } else {
+    elements.wechatLoginQrImage.removeAttribute("src");
+  }
+}
+
+function showWechatLoginModal() {
+  elements.wechatLoginModal.classList.remove("hidden");
+  elements.wechatLoginModal.setAttribute("aria-hidden", "false");
+}
+
+async function closeWechatLoginModal() {
+  clearWechatLoginPollTimer();
+  const sessionId = state.wechatLogin.sessionId;
+  elements.wechatLoginModal.classList.add("hidden");
+  elements.wechatLoginModal.setAttribute("aria-hidden", "true");
+  state.wechatLogin = {
+    sessionId: "",
+    qrcodeUrl: "",
+    qrcodeRevision: 0,
+    status: "idle",
+    message: "",
+    pollTimer: 0,
+  };
+  renderWechatLoginModal();
+  if (sessionId) {
+    try {
+      await fetch(`/api/discovery/wechat-login/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    } catch {
+      // ignore cleanup failure
+    }
+  }
+}
+
+function scheduleWechatLoginPoll() {
+  clearWechatLoginPollTimer();
+  state.wechatLogin.pollTimer = window.setTimeout(() => {
+    pollWechatLoginSession();
+  }, 2000);
+}
+
+async function pollWechatLoginSession() {
+  if (!state.wechatLogin.sessionId) {
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/discovery/wechat-login/sessions/${encodeURIComponent(state.wechatLogin.sessionId)}`);
+    state.wechatLogin.status = payload.status || "pending_scan";
+    state.wechatLogin.message = payload.message || "等待扫码确认。";
+    state.wechatLogin.qrcodeRevision = Number(payload.qrcode_revision || state.wechatLogin.qrcodeRevision || 1);
+    state.wechatLogin.qrcodeUrl = payload.qrcode_url || state.wechatLogin.qrcodeUrl;
+    renderWechatLoginModal();
+    if (payload.status === "success" || payload.status === "already_valid") {
+      setStatus("公众号登录已更新。", "success");
+      await loadSources(true);
+      window.setTimeout(() => {
+        closeWechatLoginModal();
+      }, 1200);
+      return;
+    }
+    if (payload.status === "failed" || payload.status === "expired") {
+      return;
+    }
+    scheduleWechatLoginPoll();
+  } catch (error) {
+    state.wechatLogin.message = error.message || "登录状态轮询失败，请稍后重试。";
+    renderWechatLoginModal();
+  }
+}
+
+async function createWechatLoginSession() {
+  clearWechatLoginPollTimer();
+  state.wechatLogin.message = "正在准备二维码...";
+  state.wechatLogin.status = "starting";
+  state.wechatLogin.qrcodeUrl = "";
+  state.wechatLogin.qrcodeRevision = 0;
+  renderWechatLoginModal();
+  try {
+    const payload = await requestJson("/api/discovery/wechat-login/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (payload.status === "already_valid") {
+      state.wechatLogin.message = payload.message || "当前公众号登录仍然有效。";
+      state.wechatLogin.status = payload.status;
+      renderWechatLoginModal();
+      setStatus("公众号登录仍然有效，无需重新扫码。", "success");
+      await loadSources(true);
+      window.setTimeout(() => {
+        closeWechatLoginModal();
+      }, 1000);
+      return;
+    }
+    state.wechatLogin.sessionId = payload.session_id || "";
+    state.wechatLogin.qrcodeUrl = payload.qrcode_url || "";
+    state.wechatLogin.qrcodeRevision = Number(payload.qrcode_revision || 1);
+    state.wechatLogin.status = payload.status || "pending_scan";
+    state.wechatLogin.message = payload.message || "请使用微信扫码登录。";
+    renderWechatLoginModal();
+    scheduleWechatLoginPoll();
+  } catch (error) {
+    state.wechatLogin.status = "failed";
+    state.wechatLogin.message = error.message || "二维码准备失败，请稍后重试。";
+    renderWechatLoginModal();
+  }
+}
+
+async function openWechatLoginModal() {
+  showWechatLoginModal();
+  await createWechatLoginSession();
+}
+
+function clearXhsLoginPollTimer() {
+  if (state.xhsLogin.pollTimer) {
+    window.clearTimeout(state.xhsLogin.pollTimer);
+    state.xhsLogin.pollTimer = 0;
+  }
+}
+
+function renderXhsLoginModal() {
+  const loginState = state.xhsLogin;
+  elements.xhsLoginStatus.textContent = loginState.message || "等待开始。";
+  const hasQr = Boolean(loginState.qrcodeDataUrl);
+  elements.xhsLoginQrImage.classList.toggle("hidden", !hasQr);
+  elements.xhsLoginQrPlaceholder.classList.toggle("hidden", hasQr);
+  elements.xhsLoginQrPlaceholder.textContent = hasQr
+    ? ""
+    : (loginState.message || "正在准备二维码...");
+  if (hasQr) {
+    elements.xhsLoginQrImage.src = loginState.qrcodeDataUrl;
+  } else {
+    elements.xhsLoginQrImage.removeAttribute("src");
+  }
+}
+
+function showXhsLoginModal() {
+  elements.xhsLoginModal.classList.remove("hidden");
+  elements.xhsLoginModal.setAttribute("aria-hidden", "false");
+}
+
+async function closeXhsLoginModal() {
+  clearXhsLoginPollTimer();
+  const sessionId = state.xhsLogin.sessionId;
+  elements.xhsLoginModal.classList.add("hidden");
+  elements.xhsLoginModal.setAttribute("aria-hidden", "true");
+  state.xhsLogin = {
+    sessionId: "",
+    qrcodeDataUrl: "",
+    status: "idle",
+    message: "",
+    pollTimer: 0,
+  };
+  renderXhsLoginModal();
+  if (sessionId) {
+    try {
+      await fetch(`/api/discovery/platform-login/xhs/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    } catch {
+      // ignore cleanup failure
+    }
+  }
+}
+
+function scheduleXhsLoginPoll() {
+  clearXhsLoginPollTimer();
+  state.xhsLogin.pollTimer = window.setTimeout(() => {
+    pollXhsLoginSession();
+  }, 2000);
+}
+
+async function pollXhsLoginSession() {
+  if (!state.xhsLogin.sessionId) {
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/discovery/platform-login/xhs/sessions/${encodeURIComponent(state.xhsLogin.sessionId)}`);
+    state.xhsLogin.status = payload.status || "starting";
+    state.xhsLogin.message = payload.message || "等待扫码确认。";
+    state.xhsLogin.qrcodeDataUrl = payload.qrcode_data_url || state.xhsLogin.qrcodeDataUrl;
+    renderXhsLoginModal();
+    if (payload.status === "success") {
+      setStatus("小红书登录已更新。", "success");
+      await loadSources(true);
+      window.setTimeout(() => {
+        closeXhsLoginModal();
+      }, 1200);
+      return;
+    }
+    if (payload.status === "failed") {
+      return;
+    }
+    scheduleXhsLoginPoll();
+  } catch (error) {
+    state.xhsLogin.message = error.message || "小红书登录轮询失败，请稍后重试。";
+    renderXhsLoginModal();
+  }
+}
+
+async function createXhsLoginSession() {
+  clearXhsLoginPollTimer();
+  state.xhsLogin.message = "正在准备无头登录二维码...";
+  state.xhsLogin.status = "starting";
+  state.xhsLogin.qrcodeDataUrl = "";
+  renderXhsLoginModal();
+  try {
+    const payload = await requestJson("/api/discovery/platform-login/xhs/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    state.xhsLogin.sessionId = payload.session_id || "";
+    state.xhsLogin.qrcodeDataUrl = payload.qrcode_data_url || "";
+    state.xhsLogin.status = payload.status || "starting";
+    state.xhsLogin.message = payload.message || "请使用小红书扫码登录。";
+    renderXhsLoginModal();
+    scheduleXhsLoginPoll();
+  } catch (error) {
+    state.xhsLogin.status = "failed";
+    state.xhsLogin.message = error.message || "小红书无头登录启动失败。";
+    renderXhsLoginModal();
+  }
+}
+
+async function openXhsLoginModal() {
+  showXhsLoginModal();
+  await createXhsLoginSession();
+}
+
 async function openArticleModal(articleId) {
   const payload = await requestJson(`/api/workflows/articles/${articleId}`);
   elements.modalTitle.textContent = payload.title || "本地预览";
@@ -1213,9 +1519,21 @@ function bindEvents() {
   elements.articleModal.querySelectorAll("[data-close-modal]").forEach((node) => {
     node.addEventListener("click", hideModal);
   });
+  elements.closeWechatLoginButton.addEventListener("click", closeWechatLoginModal);
+  elements.refreshWechatLoginButton.addEventListener("click", createWechatLoginSession);
+  elements.wechatLoginModal.querySelectorAll("[data-close-wechat-login]").forEach((node) => {
+    node.addEventListener("click", closeWechatLoginModal);
+  });
+  elements.closeXhsLoginButton.addEventListener("click", closeXhsLoginModal);
+  elements.refreshXhsLoginButton.addEventListener("click", createXhsLoginSession);
+  elements.xhsLoginModal.querySelectorAll("[data-close-xhs-login]").forEach((node) => {
+    node.addEventListener("click", closeXhsLoginModal);
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideModal();
+      closeWechatLoginModal();
+      closeXhsLoginModal();
     }
   });
 }
@@ -1226,6 +1544,8 @@ async function bootstrap() {
   renderLocalPlatformOptions();
   renderHeroSummary();
   renderUpdateNotices();
+  renderWechatLoginModal();
+  renderXhsLoginModal();
   renderWorkspace();
   await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices()]);
   await loadLocalArticles();

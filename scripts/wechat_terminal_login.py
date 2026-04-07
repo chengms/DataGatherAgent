@@ -19,6 +19,7 @@ from terminal_qr import render_terminal_qr
 
 DEFAULT_BASE_URL = "http://127.0.0.1:3000"
 DEFAULT_DEBUG_KEY = "data-gather-agent-wechat-debug"
+TRANSIENT_HTTP_STATUS = {502, 503, 504}
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +37,38 @@ def build_opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
 
 
+def is_transient_http_error(exc: BaseException) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in TRANSIENT_HTTP_STATUS
+    if isinstance(exc, urllib.error.URLError):
+        return True
+    return False
+
+
+def open_with_retry(
+    opener: urllib.request.OpenerDirector,
+    request: urllib.request.Request | str,
+    *,
+    timeout: int = 30,
+    retry_window_seconds: float = 45.0,
+    retry_delay_seconds: float = 1.5,
+):
+    deadline = time.time() + retry_window_seconds
+    last_error: BaseException | None = None
+    while True:
+        try:
+            return opener.open(request, timeout=timeout)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            if not is_transient_http_error(exc):
+                raise
+            last_error = exc
+            if time.time() >= deadline:
+                raise last_error
+            time.sleep(retry_delay_seconds)
+
+
 def request_json(
     opener: urllib.request.OpenerDirector,
     url: str,
@@ -49,12 +82,12 @@ def request_json(
         data = urllib.parse.urlencode(body).encode("utf-8")
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with opener.open(request, timeout=30) as response:
+    with open_with_retry(opener, request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def request_bytes(opener: urllib.request.OpenerDirector, url: str) -> bytes:
-    with opener.open(url, timeout=30) as response:
+    with open_with_retry(opener, url, timeout=30) as response:
         return response.read()
 
 
@@ -63,7 +96,7 @@ def fetch_debug_store(opener: urllib.request.OpenerDirector, base_url: str, debu
         f"{base_url.rstrip('/')}/api/_debug?key={urllib.parse.quote(debug_key)}",
         method="GET",
     )
-    with opener.open(request, timeout=30) as response:
+    with open_with_retry(opener, request, timeout=30) as response:
         raw = response.read().decode("utf-8")
     try:
         payload = json.loads(raw)
@@ -89,7 +122,7 @@ def ensure_authkey_valid(opener: urllib.request.OpenerDirector, base_url: str, a
         headers={"X-Auth-Key": auth_key},
         method="GET",
     )
-    with opener.open(req, timeout=30) as response:
+    with open_with_retry(opener, req, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if payload.get("code") != 0:
         raise RuntimeError(f"wechat exporter auth-key validation failed: {payload}")

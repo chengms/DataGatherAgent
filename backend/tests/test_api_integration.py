@@ -160,3 +160,13 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "NOT_FOUND")
         self.assertIn("request_id", payload)
 
+    def test_missing_wechat_login_session_returns_not_found(self) -> None:
+        status_code, payload = self.get_error_json("/api/discovery/wechat-login/sessions/missing-session")
+        self.assertEqual(status_code, 404)
+        self.assertEqual(payload["error"]["code"], "NOT_FOUND")
+
+    def test_missing_xhs_login_session_returns_not_found(self) -> None:
+        status_code, payload = self.get_error_json("/api/discovery/platform-login/xhs/sessions/missing-session")
+        self.assertEqual(status_code, 404)
+        self.assertEqual(payload["error"]["code"], "NOT_FOUND")
+

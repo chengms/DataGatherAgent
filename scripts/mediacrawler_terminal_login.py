@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", default=str(DEFAULT_REPO))
     parser.add_argument("--platform", choices=("xhs", "weibo", "douyin", "bilibili", "all"), default="all")
     parser.add_argument("--login-type", default="qrcode")
+    parser.add_argument("--headless", default="false")
+    parser.add_argument("--status-file", default="")
     parser.add_argument("--save-service", default=SAVE_SERVICE)
     return parser.parse_args()
 
@@ -77,6 +80,21 @@ def prepend_repo_to_syspath(repo_dir: Path) -> None:
 def render_qrcode(qr_code: str, platform: str) -> None:
     label = PLATFORM_SPECS[platform]["label"]
     render_terminal_qr(qr_code, f"Scan this QR code with {label}:")
+
+
+def parse_bool(raw: str) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def write_status(status_file: Path | None, payload: dict[str, Any]) -> None:
+    if status_file is None:
+        return
+    payload = {
+        **payload,
+        "updated_at": time.time(),
+    }
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    status_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _crawler_and_login_cls(platform: str):
@@ -121,6 +139,8 @@ async def run_single_login(
     repo_dir: Path,
     platform: str,
     login_type: str,
+    headless: bool,
+    status_file: Path | None,
     save_service: str,
 ) -> dict[str, Any]:
     prepend_repo_to_syspath(repo_dir)
@@ -138,12 +158,29 @@ async def run_single_login(
     original_auto_close = config.AUTO_CLOSE_BROWSER
 
     def patched_show_qrcode(qr_code: str) -> None:
+        write_status(
+            status_file,
+            {
+                "status": "pending_scan",
+                "platform": platform,
+                "message": f"{PLATFORM_SPECS[platform]['label']}二维码已生成，请扫码登录。",
+                "qrcode_data_url": qr_code if str(qr_code).startswith("data:") else f"data:image/png;base64,{qr_code}",
+            },
+        )
         render_qrcode(qr_code, platform)
 
     crawler_util.show_qrcode = patched_show_qrcode
     config.AUTO_CLOSE_BROWSER = True
     crawler = crawler_cls()
     try:
+        write_status(
+            status_file,
+            {
+                "status": "starting",
+                "platform": platform,
+                "message": f"正在启动{PLATFORM_SPECS[platform]['label']}无头登录会话。",
+            },
+        )
         await parse_cmd(
             [
                 "--platform",
@@ -151,7 +188,7 @@ async def run_single_login(
                 "--lt",
                 login_type,
                 "--headless",
-                "false",
+                "true" if headless else "false",
             ]
         )
         async with async_playwright() as playwright:
@@ -160,14 +197,22 @@ async def run_single_login(
                 playwright.chromium,
                 None,
                 user_agent,
-                headless=False,
+                headless=headless,
             )
             stealth_path = repo_dir / "libs" / "stealth.min.js"
             if stealth_path.exists():
                 await crawler.browser_context.add_init_script(path=str(stealth_path))
             crawler.context_page = await crawler.browser_context.new_page()
             await crawler.context_page.goto(crawler.index_url)
-            print(f"Starting {PLATFORM_SPECS[platform]['label']} login flow. Complete login in browser.", flush=True)
+            print(f"Starting {PLATFORM_SPECS[platform]['label']} login flow. Complete login by scanning the QR code.", flush=True)
+            write_status(
+                status_file,
+                {
+                    "status": "waiting_qrcode",
+                    "platform": platform,
+                    "message": f"正在加载{PLATFORM_SPECS[platform]['label']}二维码。",
+                },
+            )
             login_obj = login_cls(
                 login_type=login_type,
                 login_phone="",
@@ -182,12 +227,32 @@ async def run_single_login(
                 raise RuntimeError(f"{platform} login finished but no cookies were captured")
             set_service_env(save_service, cookie_env, cookie_string)
             set_service_env(save_service, login_env, "cookie")
+            write_status(
+                status_file,
+                {
+                    "status": "success",
+                    "platform": platform,
+                    "message": f"{PLATFORM_SPECS[platform]['label']}登录成功，已保存 Cookie。",
+                    "cookie_env": cookie_env,
+                    "cookie_length": len(cookie_string),
+                },
+            )
             return {
                 "status": "ok",
                 "platform": platform,
                 "cookie_env": cookie_env,
                 "cookie_length": len(cookie_string),
             }
+    except Exception as exc:
+        write_status(
+            status_file,
+            {
+                "status": "failed",
+                "platform": platform,
+                "message": f"{PLATFORM_SPECS[platform]['label']}登录失败：{exc}",
+            },
+        )
+        raise
     finally:
         try:
             close_fn = getattr(crawler, "close", None)
@@ -210,6 +275,7 @@ def target_platforms(platform_arg: str) -> list[str]:
 def main() -> int:
     args = parse_args()
     repo_dir = Path(args.repo).resolve()
+    status_file = Path(args.status_file).resolve() if args.status_file else None
     if not repo_dir.exists():
         raise RuntimeError(f"managed MediaCrawler checkout does not exist: {repo_dir}")
     ensure_repo_python(repo_dir)
@@ -221,6 +287,8 @@ def main() -> int:
                     repo_dir=repo_dir,
                     platform=platform,
                     login_type=args.login_type,
+                    headless=parse_bool(args.headless),
+                    status_file=status_file,
                     save_service=args.save_service,
                 )
             )
