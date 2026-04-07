@@ -38,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def build_subprocess_env(cache_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    env["UV_CACHE_DIR"] = str(cache_dir)
+    return env
+
+
 def _extract_dict_items(payload: object) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
@@ -280,20 +287,31 @@ def main() -> int:
         raise RuntimeError(f"managed MediaCrawler checkout does not exist: {repo_dir}")
 
     with tempfile.TemporaryDirectory(prefix="mediacrawler-xhs-") as temp_dir:
-        output_dir = Path(temp_dir) / "output"
+        temp_root = Path(temp_dir)
+        output_dir = temp_root / "output"
+        cache_dir = temp_root / "uv-cache"
+        stdout_path = temp_root / "stdout.log"
+        stderr_path = temp_root / "stderr.log"
         output_dir.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(
-            build_start_command(args, output_dir),
-            cwd=repo_dir,
-            env=os.environ.copy(),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_handle, stderr_path.open(
+            "w", encoding="utf-8", errors="replace"
+        ) as stderr_handle:
+            completed = subprocess.run(
+                build_start_command(args, output_dir),
+                cwd=repo_dir,
+                env=build_subprocess_env(cache_dir),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
         if completed.returncode != 0:
-            stderr_tail = (completed.stderr or completed.stdout or "")[-4000:]
+            stderr_tail = stderr_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+            if not stderr_tail:
+                stderr_tail = stdout_path.read_text(encoding="utf-8", errors="replace")[-4000:]
             sys.stderr.write(stderr_tail)
             return completed.returncode
 
