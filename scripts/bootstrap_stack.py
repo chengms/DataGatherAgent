@@ -65,6 +65,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-update", action="store_true", help="Skip pulling updates for clean managed repositories.")
     parser.add_argument("--skip-install", action="store_true", help="Skip dependency installation and only prepare/start services.")
     parser.add_argument("--skip-wechat-login", action="store_true", help="Skip the WeChat QR login step.")
+    parser.add_argument(
+        "--interactive-wechat-login",
+        action="store_true",
+        help="If WeChat login is invalid, run the terminal QR login flow before continuing startup.",
+    )
     parser.add_argument("--skip-xhs-login", action="store_true", help="Skip the Xiaohongshu QR login step.")
     parser.add_argument("--skip-weibo-login", action="store_true", help="Skip the Weibo QR login step.")
     parser.add_argument("--skip-douyin-login", action="store_true", help="Skip the Douyin QR login step.")
@@ -211,6 +216,8 @@ def ensure_wechat_login(
     service: dict,
     cwd: Path,
     env: dict[str, str],
+    *,
+    interactive_refresh: bool = False,
     report: dict[str, list[dict[str, str]]] | None = None,
 ) -> subprocess.Popen[str] | None:
     process: subprocess.Popen[str] | None = None
@@ -230,6 +237,17 @@ def ensure_wechat_login(
 
     previous_reason = str(status.get("reason") or "unknown")
     manage_services.log(f"wechat login requires refresh: {previous_reason}")
+    if not interactive_refresh:
+        manage_services.log("wechat login requires manual refresh in the web console; continuing startup")
+        if report is not None:
+            add_report_entry(
+                report,
+                "checks",
+                "wechat login",
+                "skipped",
+                f"{previous_reason}; finish login from the web console after startup",
+            )
+        return process
     run_login_script("wechat_terminal_login.py")
     status = run_json_script("wechat_login_status.py")
     if not bool(status.get("ok")):
@@ -300,7 +318,13 @@ def main() -> int:
         if not args.skip_wechat_login:
             if wechat_cwd is None or wechat_env is None:
                 raise RuntimeError("wechat_exporter preparation did not produce a runnable service context")
-            wechat_process = ensure_wechat_login(services["wechat_exporter"], wechat_cwd, wechat_env, report=report)
+            wechat_process = ensure_wechat_login(
+                services["wechat_exporter"],
+                wechat_cwd,
+                wechat_env,
+                interactive_refresh=args.interactive_wechat_login,
+                report=report,
+            )
             if wechat_process is not None:
                 promoted_existing_processes.append((services["wechat_exporter"], wechat_process))
         else:

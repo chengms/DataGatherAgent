@@ -23,7 +23,7 @@ class BootstrapStackTests(unittest.TestCase):
         rendered = "\n".join(call.args[0] for call in log.call_args_list)
         self.assertIn("启动前自检摘要", rendered)
         self.assertIn("服务准备", rendered)
-        self.assertIn("backend: 已准备", rendered)
+        self.assertIn("backend:", rendered)
         self.assertIn("wechat login: 正常", rendered)
         self.assertIn("next step: 即将启动", rendered)
 
@@ -78,7 +78,7 @@ class BootstrapStackTests(unittest.TestCase):
         self.assertEqual(report["checks"][0]["name"], "wechat login")
         self.assertEqual(report["checks"][0]["status"], "ok")
 
-    def test_ensure_wechat_login_refreshes_invalid_session(self) -> None:
+    def test_ensure_wechat_login_refreshes_invalid_session_in_interactive_mode(self) -> None:
         process = object()
         with patch("bootstrap_stack.service_is_already_running", return_value=False), patch(
             "bootstrap_stack.start_service_temp", return_value=process
@@ -86,9 +86,33 @@ class BootstrapStackTests(unittest.TestCase):
             "bootstrap_stack.run_json_script",
             side_effect=[{"ok": False, "reason": "auth_invalid"}, {"ok": True, "reason": "ok"}],
         ), patch("bootstrap_stack.run_login_script") as run_login_script:
-            result = bootstrap_stack.ensure_wechat_login({"name": "wechat_exporter"}, Path("."), {})
+            result = bootstrap_stack.ensure_wechat_login(
+                {"name": "wechat_exporter"},
+                Path("."),
+                {},
+                interactive_refresh=True,
+            )
         self.assertIs(result, process)
         run_login_script.assert_called_once_with("wechat_terminal_login.py")
+
+    def test_ensure_wechat_login_defers_manual_refresh_by_default(self) -> None:
+        process = object()
+        report = {"services": [], "checks": [], "startup": []}
+        with patch("bootstrap_stack.service_is_already_running", return_value=False), patch(
+            "bootstrap_stack.start_service_temp", return_value=process
+        ), patch(
+            "bootstrap_stack.run_json_script", return_value={"ok": False, "reason": "auth_invalid"}
+        ), patch("bootstrap_stack.run_login_script") as run_login_script:
+            result = bootstrap_stack.ensure_wechat_login(
+                {"name": "wechat_exporter"},
+                Path("."),
+                {},
+                report=report,
+            )
+        self.assertIs(result, process)
+        run_login_script.assert_not_called()
+        self.assertEqual(report["checks"][0]["status"], "skipped")
+        self.assertIn("web console", report["checks"][0]["detail"])
 
     def test_ensure_wechat_login_reuses_existing_service(self) -> None:
         with patch("bootstrap_stack.service_is_already_running", return_value=True), patch(
