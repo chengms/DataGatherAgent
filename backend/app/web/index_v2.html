@@ -12,19 +12,19 @@
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">Mission Control</p>
-        <h1>围绕任务发起、结果筛选和本地沉淀，重组整套采集操作流。</h1>
-        <p class="hero-text">界面按常见采集平台的使用路径重新组织：先选择平台和关键词发起任务，再在同一工作区查看热门结果、抓取明细和本地库全文预览。</p>
+        <h1>把平台复检、任务发起和本地沉淀放进同一个采集工作台。</h1>
+        <p class="hero-text">先确认默认链路是否真的可运行，再发起任务、核对抓取结果，最后回到本地资料库做全文搜索与评论回看。</p>
       </div>
       <div class="hero-side">
-        <div class="hero-status" id="healthBadge">正在检查接口状态...</div>
+        <div class="hero-status" id="healthBadge">正在检查链路...</div>
         <div class="hero-stat-grid">
           <article class="hero-stat-card">
-            <span>平台接入</span>
+            <span>链路就绪</span>
             <strong id="heroPlatformCount">-</strong>
-            <small id="heroPlatformMeta">正在统计已接入与就绪数量</small>
+            <small id="heroPlatformMeta">正在统计默认链路可运行的平台</small>
           </article>
           <article class="hero-stat-card">
-            <span>在线链路</span>
+            <span>在线复检</span>
             <strong id="heroLiveCount">-</strong>
             <small id="heroLiveMeta">正在检查可直接抓取的平台链路</small>
           </article>
@@ -42,15 +42,17 @@
       </div>
     </section>
 
+    <section id="updateNoticeBanner" class="update-banner hidden" aria-live="polite"></section>
+
     <section class="layout command-layout">
       <article class="panel control-panel">
         <div class="panel-head compact">
           <div>
             <p class="eyebrow">Launchpad</p>
             <h2>新建采集任务</h2>
-            <p class="panel-intro">输入一组关键词，勾选平台后直接运行预览。系统会同步写入最近任务，并把热门结果和抓取明细送入结果工作区。</p>
+            <p class="panel-intro">输入关键词后按平台发起预览。系统会同步记录最近任务，并把热门结果、抓取明细和本地沉淀放到同一工作区里。</p>
           </div>
-          <button id="refreshSourcesButton" class="ghost-button" type="button">刷新平台状态</button>
+          <button id="refreshSourcesButton" class="ghost-button" type="button">重新复检平台</button>
         </div>
 
         <form id="previewForm" class="preview-form">
@@ -100,7 +102,7 @@ Semiconductor</textarea>
           <div>
             <p class="eyebrow">Platform Health</p>
             <h2>平台健康与能力</h2>
-            <p class="panel-intro">这里集中展示各平台是否已接入、是否具备发现与抓取能力，以及当前是否为在线链路。</p>
+            <p class="panel-intro">这里会把站点名称、站点说明、默认抓取链路、服务在线情况和登录有效性拆开显示，避免把“已接入”误看成“可运行”。</p>
           </div>
         </div>
         <div id="sourcesGrid" class="platform-status-grid"></div>

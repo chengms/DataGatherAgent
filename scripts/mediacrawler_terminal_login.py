@@ -80,26 +80,31 @@ def render_qrcode(qr_code: str, platform: str) -> None:
 
 
 def _crawler_and_login_cls(platform: str):
-    if platform == "xhs":
-        from media_platform.xhs.core import XiaoHongShuCrawler  # type: ignore
-        from media_platform.xhs.login import XiaoHongShuLogin  # type: ignore
+    try:
+        if platform == "xhs":
+            from media_platform.xhs.core import XiaoHongShuCrawler  # type: ignore
+            from media_platform.xhs.login import XiaoHongShuLogin  # type: ignore
 
-        return XiaoHongShuCrawler, XiaoHongShuLogin
-    if platform == "weibo":
-        from media_platform.weibo.core import WeiboCrawler  # type: ignore
-        from media_platform.weibo.login import WeiboLogin  # type: ignore
+            return XiaoHongShuCrawler, XiaoHongShuLogin
+        if platform == "weibo":
+            from media_platform.weibo.core import WeiboCrawler  # type: ignore
+            from media_platform.weibo.login import WeiboLogin  # type: ignore
 
-        return WeiboCrawler, WeiboLogin
-    if platform == "douyin":
-        from media_platform.douyin.core import DouYinCrawler  # type: ignore
-        from media_platform.douyin.login import DouYinLogin  # type: ignore
+            return WeiboCrawler, WeiboLogin
+        if platform == "douyin":
+            from media_platform.douyin.core import DouYinCrawler  # type: ignore
+            from media_platform.douyin.login import DouYinLogin  # type: ignore
 
-        return DouYinCrawler, DouYinLogin
-    if platform == "bilibili":
-        from media_platform.bilibili.core import BilibiliCrawler  # type: ignore
-        from media_platform.bilibili.login import BilibiliLogin  # type: ignore
+            return DouYinCrawler, DouYinLogin
+        if platform == "bilibili":
+            from media_platform.bilibili.core import BilibiliCrawler  # type: ignore
+            from media_platform.bilibili.login import BilibiliLogin  # type: ignore
 
-        return BilibiliCrawler, BilibiliLogin
+            return BilibiliCrawler, BilibiliLogin
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            f"MediaCrawler is missing dependency '{exc.name}'. Run the MediaCrawler install/bootstrap steps again."
+        ) from exc
     raise ValueError(f"unsupported platform: {platform}")
 
 

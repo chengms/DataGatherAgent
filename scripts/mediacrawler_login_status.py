@@ -211,6 +211,9 @@ def main() -> int:
             try:
                 ok = asyncio.run(run_platform_check(platform, repo_dir, cookies))
                 reason = "ok" if ok else "cookie_invalid"
+            except ModuleNotFoundError as exc:
+                ok = False
+                reason = f"missing_dependency:{exc.name or type(exc).__name__}"
             except Exception as exc:
                 ok = False
                 reason = f"check_error:{type(exc).__name__}"

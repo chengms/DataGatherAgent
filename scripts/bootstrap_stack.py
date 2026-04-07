@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import subprocess
@@ -15,6 +16,46 @@ import service_env_store
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+STATUS_LABELS = {
+    "prepared": "已准备",
+    "reused": "已复用",
+    "ok": "正常",
+    "repaired": "已修复",
+    "skipped": "已跳过",
+    "ready": "即将启动",
+    "pending": "待执行",
+    "failed": "失败",
+}
+
+SECTION_LABELS = {
+    "services": "服务准备",
+    "checks": "登录与校验",
+    "startup": "启动流程",
+}
+
+
+def add_report_entry(report: dict[str, list[dict[str, str]]], section: str, name: str, status: str, detail: str) -> None:
+    report.setdefault(section, []).append(
+        {
+            "name": name,
+            "status": status,
+            "detail": detail,
+        }
+    )
+
+
+def print_preflight_report(report: dict[str, list[dict[str, str]]]) -> None:
+    manage_services.log("启动前自检摘要")
+    for section in ("services", "checks", "startup"):
+        entries = report.get(section, [])
+        if not entries:
+            continue
+        manage_services.log(f"  {SECTION_LABELS.get(section, section)}:")
+        for entry in entries:
+            status_label = STATUS_LABELS.get(entry["status"], entry["status"])
+            manage_services.log(f"    - {entry['name']}: {status_label} | {entry['detail']}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,13 +91,23 @@ def install_service_without_env_gate(
     *,
     update: bool,
     skip_install: bool,
+    report: dict[str, list[dict[str, str]]] | None = None,
 ) -> tuple[Path, dict[str, str]]:
     manage_services.ensure_required_binaries(service)
+    if manage_services.service_is_healthy(service):
+        cwd = manage_services.resolve_service_cwd(service)
+        env = manage_services.merged_env(service, global_env, overrides)
+        manage_services.ensure_required_env(service, env)
+        if report is not None:
+            detail = f"{service['kind']} @ {cwd} | reused running service | skipped update + install"
+            add_report_entry(report, "services", service["name"], "reused", detail)
+        return cwd, env
     if service["kind"] == "managed_repo":
         cwd = manage_services.ensure_managed_repo(service, update=update)
     else:
-        cwd = manage_services.resolve_path(service["cwd"])
+        cwd = manage_services.resolve_service_cwd(service)
     env = manage_services.merged_env(service, global_env, overrides)
+    manage_services.ensure_required_env(service, env)
     install_command = service.get("install")
     if install_command and not skip_install:
         if install_command and isinstance(install_command[0], list):
@@ -64,6 +115,21 @@ def install_service_without_env_gate(
                 manage_services.run_command(step, cwd, env)
         else:
             manage_services.run_command(install_command, cwd, env)
+    if service["name"] == "mediacrawler_xhs" and not skip_install:
+        manage_services.run_command(
+            [sys.executable, "scripts/ensure_mediacrawler_xhs_dependency.py", "--repo", str(cwd)],
+            ROOT_DIR,
+            os.environ.copy(),
+        )
+    if report is not None:
+        detail = f"{service['kind']} @ {cwd}"
+        if skip_install:
+            detail += " | install skipped"
+        elif service["name"] == "mediacrawler_xhs":
+            detail += " | dependencies synced + xhshow ensured"
+        else:
+            detail += " | dependencies ready"
+        add_report_entry(report, "services", service["name"], "prepared", detail)
     return cwd, env
 
 
@@ -101,6 +167,30 @@ def run_login_script(script_name: str, *script_args: str) -> None:
     )
 
 
+def run_json_script(script_name: str, *script_args: str) -> dict:
+    completed = subprocess.run(
+        [sys.executable, f"scripts/{script_name}", *script_args],
+        cwd=ROOT_DIR,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=180,
+    )
+    stdout = completed.stdout.strip() or "{}"
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{script_name} returned invalid JSON: {stdout[:200] or completed.stderr[:200] or 'empty output'}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{script_name} returned an unexpected payload")
+    return payload
+
+
 def current_global_env() -> dict[str, str]:
     payload = service_env_store.load_local_config()
     return {str(k): str(v) for k, v in payload.get("global_env", {}).items()}
@@ -113,10 +203,77 @@ def current_service_env(service_name: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in service.get("env", {}).items()}
 
 
+def service_is_already_running(service: dict) -> bool:
+    return manage_services.service_is_healthy(service)
+
+
+def ensure_wechat_login(
+    service: dict,
+    cwd: Path,
+    env: dict[str, str],
+    report: dict[str, list[dict[str, str]]] | None = None,
+) -> subprocess.Popen[str] | None:
+    process: subprocess.Popen[str] | None = None
+    if service_is_already_running(service):
+        manage_services.log("reusing existing wechat exporter service for login validation")
+        if report is not None:
+            add_report_entry(report, "startup", "wechat_exporter", "ready", "复用已在运行的 3000 端口服务")
+    else:
+        manage_services.log("starting temporary wechat exporter service for login validation")
+        process = start_service_temp(service, cwd, env)
+    status = run_json_script("wechat_login_status.py")
+    if bool(status.get("ok")):
+        manage_services.log("wechat login is valid")
+        if report is not None:
+            add_report_entry(report, "checks", "wechat login", "ok", "existing login is still valid")
+        return process
+
+    previous_reason = str(status.get("reason") or "unknown")
+    manage_services.log(f"wechat login requires refresh: {previous_reason}")
+    run_login_script("wechat_terminal_login.py")
+    status = run_json_script("wechat_login_status.py")
+    if not bool(status.get("ok")):
+        raise RuntimeError(f"wechat login validation failed after refresh: {status.get('reason') or 'unknown'}")
+    manage_services.log("wechat login refreshed successfully")
+    if report is not None:
+        add_report_entry(report, "checks", "wechat login", "repaired", f"refreshed from {previous_reason}")
+    return process
+
+
+def ensure_mediacrawler_platform_login(
+    platform: str,
+    report: dict[str, list[dict[str, str]]] | None = None,
+) -> None:
+    status = run_json_script("mediacrawler_login_status.py", "--platforms", platform)
+    if bool(status.get("ok")):
+        manage_services.log(f"{platform} login is valid")
+        if report is not None:
+            add_report_entry(report, "checks", f"{platform} login", "ok", "existing login is still valid")
+        return
+
+    previous_reason = str(status.get("reason") or "unknown")
+    manage_services.log(f"{platform} login requires refresh: {previous_reason}")
+    run_login_script("mediacrawler_terminal_login.py", "--platform", platform)
+    status = run_json_script("mediacrawler_login_status.py", "--platforms", platform)
+    if not bool(status.get("ok")):
+        raise RuntimeError(f"{platform} login validation failed after refresh: {status.get('reason') or 'unknown'}")
+    manage_services.log(f"{platform} login refreshed successfully")
+    if report is not None:
+        add_report_entry(report, "checks", f"{platform} login", "repaired", f"refreshed from {previous_reason}")
+
+
 def main() -> int:
     args = parse_args()
     ensure_local_config_exists()
     services, global_env, overrides = load_manifest_map()
+    report: dict[str, list[dict[str, str]]] = {"services": [], "checks": [], "startup": []}
+    add_report_entry(
+        report,
+        "startup",
+        "mode",
+        "pending",
+        f"update={'off' if args.no_update else 'on'}, install={'off' if args.skip_install else 'on'}",
+    )
 
     manage_services.log("scanning environment and preparing repositories")
     prepared: list[tuple[dict, Path, dict[str, str]]] = []
@@ -130,6 +287,7 @@ def main() -> int:
             overrides,
             update=not args.no_update,
             skip_install=args.skip_install,
+            report=report,
         )
         prepared.append((service, cwd, env))
         if service_name == "wechat_exporter":
@@ -140,40 +298,42 @@ def main() -> int:
     promoted_existing_processes: list[tuple[dict, subprocess.Popen[str]]] = []
     try:
         if not args.skip_wechat_login:
-            wechat_key = current_global_env().get("WECHAT_EXPORTER_API_KEY", "").strip()
-            if not wechat_key or wechat_key == "filled-by-login-wechat-script":
-                manage_services.log("starting temporary wechat exporter service for QR login")
-                if wechat_cwd is None or wechat_env is None:
-                    raise RuntimeError("wechat_exporter preparation did not produce a runnable service context")
-                wechat_process = start_service_temp(services["wechat_exporter"], wechat_cwd, wechat_env)
-                run_login_script("wechat_terminal_login.py")
+            if wechat_cwd is None or wechat_env is None:
+                raise RuntimeError("wechat_exporter preparation did not produce a runnable service context")
+            wechat_process = ensure_wechat_login(services["wechat_exporter"], wechat_cwd, wechat_env, report=report)
+            if wechat_process is not None:
                 promoted_existing_processes.append((services["wechat_exporter"], wechat_process))
+        else:
+            add_report_entry(report, "checks", "wechat login", "skipped", "skip flag enabled")
         if not args.skip_xhs_login:
-            xhs_cookie = current_service_env("mediacrawler_xhs").get("XHS_MEDIACRAWLER_COOKIES", "").strip()
-            if not xhs_cookie:
-                manage_services.log("starting Xiaohongshu terminal login")
-                run_login_script("mediacrawler_terminal_login.py", "--platform", "xhs")
+            ensure_mediacrawler_platform_login("xhs", report=report)
+        else:
+            add_report_entry(report, "checks", "xhs login", "skipped", "skip flag enabled")
         if not args.skip_weibo_login:
-            weibo_cookie = current_service_env("mediacrawler_xhs").get("WEIBO_MEDIACRAWLER_COOKIES", "").strip()
-            if not weibo_cookie:
-                manage_services.log("starting Weibo terminal login")
-                run_login_script("mediacrawler_terminal_login.py", "--platform", "weibo")
+            ensure_mediacrawler_platform_login("weibo", report=report)
+        else:
+            add_report_entry(report, "checks", "weibo login", "skipped", "skip flag enabled")
         if not args.skip_douyin_login:
-            douyin_cookie = current_service_env("mediacrawler_xhs").get("DY_MEDIACRAWLER_COOKIES", "").strip()
-            if not douyin_cookie:
-                manage_services.log("starting Douyin terminal login")
-                run_login_script("mediacrawler_terminal_login.py", "--platform", "douyin")
+            ensure_mediacrawler_platform_login("douyin", report=report)
+        else:
+            add_report_entry(report, "checks", "douyin login", "skipped", "skip flag enabled")
         if not args.skip_bilibili_login:
-            bilibili_cookie = current_service_env("mediacrawler_xhs").get("BILI_MEDIACRAWLER_COOKIES", "").strip()
-            if not bilibili_cookie:
-                manage_services.log("starting Bilibili terminal login")
-                run_login_script("mediacrawler_terminal_login.py", "--platform", "bilibili")
+            ensure_mediacrawler_platform_login("bilibili", report=report)
+        else:
+            add_report_entry(report, "checks", "bilibili login", "skipped", "skip flag enabled")
+
+        add_report_entry(report, "startup", "next step", "ready", "starting managed services")
+        print_preflight_report(report)
 
         manage_services.log("starting full stack")
         manage_services.start_prepared_services(
             prepared,
             existing_processes=promoted_existing_processes,
         )
+    except Exception as exc:
+        add_report_entry(report, "startup", "bootstrap", "failed", str(exc))
+        print_preflight_report(report)
+        raise
     finally:
         if wechat_process is not None and not promoted_existing_processes:
             stop_service_temp(services["wechat_exporter"], wechat_process)

@@ -157,3 +157,29 @@ class SourceInfoResponse(BaseModel):
     platform: str
     description: str
     live: bool
+    service_name: str | None = None
+    service_label: str | None = None
+    service_online: bool = False
+    service_status: str = "unknown"
+    login_required: bool = False
+    login_status: str = "not_required"
+    login_reason: str | None = None
+    runtime_state: str = "unknown"
+    runtime_ready: bool = False
+    status_summary: str = ""
+    last_checked_at: str | None = None
+
+
+class ServiceUpdateNotice(BaseModel):
+    service_name: str
+    status: str
+    branch: str | None = None
+    ahead_by: int = 0
+    local_sha: str | None = None
+    remote_sha: str | None = None
+    summary: str = ""
+
+
+class UpdateNoticeResponse(BaseModel):
+    checked_at: str | None = None
+    items: list[ServiceUpdateNotice] = Field(default_factory=list)

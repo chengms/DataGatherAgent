@@ -20,6 +20,9 @@ const state = {
   sources: [],
   jobs: [],
   catalogTotal: 0,
+  backendHealthy: null,
+  updateNotices: [],
+  updateCheckedAt: "",
   activeWorkspaceTab: "hot",
   lastPreview: null,
   previewFilters: {
@@ -45,6 +48,7 @@ const state = {
 
 const elements = {
   healthBadge: document.getElementById("healthBadge"),
+  updateNoticeBanner: document.getElementById("updateNoticeBanner"),
   heroPlatformCount: document.getElementById("heroPlatformCount"),
   heroPlatformMeta: document.getElementById("heroPlatformMeta"),
   heroLiveCount: document.getElementById("heroLiveCount"),
@@ -138,8 +142,105 @@ function localizePlatform(platform) {
     .join(" / ");
 }
 
+function localizeServiceName(serviceName) {
+  const mapping = {
+    wechat_exporter: "公众号服务",
+    mediacrawler_xhs: "MediaCrawler 服务",
+    backend: "控制台后端",
+  };
+  return mapping[serviceName] || serviceName || "受管服务";
+}
+
 function localizeContentKind(kind) {
   return CONTENT_KIND_LABELS[kind] || (kind || "未知");
+}
+
+function humanizeLoginReason(reason) {
+  const mapping = {
+    missing_api_key: "缺少公众号登录信息",
+    missing_cookies: "缺少平台 Cookie",
+    missing_credentials: "缺少登录信息",
+    service_offline: "服务未启动，暂时无法校验",
+    service_unreachable: "服务不可达",
+    cookie_invalid: "登录信息已过期",
+    auth_invalid: "登录信息已失效",
+  };
+  if (mapping[reason]) {
+    return mapping[reason];
+  }
+  if (String(reason || "").startsWith("xhs:")) {
+    return "小红书登录信息已过期";
+  }
+  if (String(reason || "").startsWith("weibo:")) {
+    return "微博登录信息已过期";
+  }
+  if (String(reason || "").startsWith("douyin:")) {
+    return "抖音登录信息已过期";
+  }
+  if (String(reason || "").startsWith("bilibili:")) {
+    return "B站登录信息已过期";
+  }
+  return reason || "未返回更多信息";
+}
+
+function getPlatformStateMeta(platform, capability) {
+  if (!platform.supported) {
+    return {
+      badge: "即将支持",
+      tone: "muted",
+      runtime: "能力接入中",
+      detail: "平台能力仍在接入中，当前不会参与工作流预览。",
+    };
+  }
+
+  if (!capability?.search || !capability?.fetch) {
+    return {
+      badge: "能力待补齐",
+      tone: "muted",
+      runtime: "发现 / 抓取能力未完整接入",
+      detail: "默认链路仍未补齐发现和抓取能力。",
+    };
+  }
+
+  const runtimeState = capability?.runtimeState || "unknown";
+  if (runtimeState === "ready") {
+    return {
+      badge: "可运行",
+      tone: "success",
+      runtime: capability.live ? "默认链路在线" : "默认链路可用",
+      detail: capability.statusSummary || "默认抓取链路已就绪。",
+    };
+  }
+  if (runtimeState === "service_offline") {
+    return {
+      badge: "未启动",
+      tone: "warning",
+      runtime: `${capability.serviceLabel || "关联服务"}未在线`,
+      detail: capability.statusSummary || "服务未启动，暂时不能运行默认链路。",
+    };
+  }
+  if (runtimeState === "login_required") {
+    return {
+      badge: "待登录",
+      tone: "warning",
+      runtime: "缺少可用登录信息",
+      detail: capability.statusSummary || "补齐登录信息后才能运行默认链路。",
+    };
+  }
+  if (runtimeState === "login_expired") {
+    return {
+      badge: "登录过期",
+      tone: "danger",
+      runtime: humanizeLoginReason(capability.loginReason),
+      detail: capability.statusSummary || "当前登录信息已失效，请重新扫码登录。",
+    };
+  }
+  return {
+    badge: "待复检",
+    tone: "warning",
+    runtime: "运行状态暂未确认",
+    detail: capability?.statusSummary || "服务在线，但暂时无法确认当前登录状态。",
+  };
 }
 
 function localizeJobStatus(status) {
@@ -167,6 +268,17 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function formatRelativeUpdateTime(value) {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return `最近检查 ${formatDateTime(value)}`;
 }
 
 function summarizeText(value, limit = 140) {
@@ -206,11 +318,39 @@ function buildCapabilityMap() {
   const capabilityMap = new Map();
   for (const source of state.sources) {
     if (!capabilityMap.has(source.platform)) {
-      capabilityMap.set(source.platform, { search: false, fetch: false, live: false });
+      capabilityMap.set(source.platform, {
+        search: false,
+        fetch: false,
+        live: false,
+        serviceName: "",
+        serviceLabel: "",
+        serviceOnline: false,
+        serviceStatus: "unknown",
+        loginRequired: false,
+        loginStatus: "not_required",
+        loginReason: "",
+        runtimeState: "unknown",
+        runtimeReady: false,
+        statusSummary: "",
+        lastCheckedAt: "",
+      });
     }
     const current = capabilityMap.get(source.platform);
     current[source.kind] = true;
     current.live = current.live || Boolean(source.live);
+    current.serviceName = current.serviceName || source.service_name || "";
+    current.serviceLabel = current.serviceLabel || source.service_label || "";
+    current.serviceOnline = current.serviceOnline || Boolean(source.service_online);
+    current.serviceStatus = source.service_status || current.serviceStatus;
+    current.loginRequired = current.loginRequired || Boolean(source.login_required);
+    if (source.login_status && (current.loginStatus === "not_required" || source.login_status !== "not_required")) {
+      current.loginStatus = source.login_status;
+    }
+    current.loginReason = current.loginReason || source.login_reason || "";
+    current.runtimeState = source.runtime_state || current.runtimeState;
+    current.runtimeReady = current.runtimeReady || Boolean(source.runtime_ready);
+    current.statusSummary = current.statusSummary || source.status_summary || "";
+    current.lastCheckedAt = current.lastCheckedAt || source.last_checked_at || "";
   }
   return capabilityMap;
 }
@@ -242,8 +382,9 @@ function renderPlatformSelector() {
   elements.platformGrid.innerHTML = PLATFORM_OPTIONS.map((platform) => {
     const checked = previous.size ? previous.has(platform.key) : DEFAULT_SELECTED_PLATFORMS.has(platform.key);
     const capability = capabilityMap.get(platform.key);
-    const ready = Boolean(capability?.search && capability?.fetch && platform.supported);
-    const live = Boolean(capability?.live);
+    const meta = getPlatformStateMeta(platform, capability);
+    const ready = Boolean(capability?.runtimeReady && platform.supported);
+    const live = Boolean(capability?.live && capability?.runtimeReady);
     return `
       <label class="platform-option${platform.supported ? "" : " disabled"}${checked ? " selected" : ""}">
         <input
@@ -255,12 +396,13 @@ function renderPlatformSelector() {
         >
         <div class="platform-option-head">
           <span class="platform-option-title">${platform.label}</span>
-          <span class="platform-option-tag">${platform.supported ? "已接入" : "即将支持"}</span>
+          <span class="platform-option-tag ${meta.tone}">${meta.badge}</span>
         </div>
         <span class="platform-option-desc">${platform.description}</span>
+        <span class="platform-option-runtime">${meta.runtime}</span>
         <div class="platform-option-foot">
-          <span class="mini-pill ${ready ? "" : "muted"}">${ready ? "发现+抓取" : "能力待补齐"}</span>
-          <span class="mini-pill ${live ? "" : "muted"}">${live ? "在线链路" : "离线/模拟"}</span>
+          <span class="mini-pill ${ready ? "" : "muted"}">${ready ? "默认链路就绪" : "默认链路待处理"}</span>
+          <span class="mini-pill ${live ? "" : "muted"}">${live ? "在线执行" : "需复检"}</span>
         </div>
       </label>
     `;
@@ -272,22 +414,46 @@ function renderSourceCards() {
   const capabilityMap = buildCapabilityMap();
   elements.sourcesGrid.innerHTML = PLATFORM_OPTIONS.map((platform) => {
     const capability = capabilityMap.get(platform.key);
-    const ready = Boolean(capability?.search && capability?.fetch && platform.supported);
-    const live = Boolean(capability?.live);
+    const meta = getPlatformStateMeta(platform, capability);
+    const ready = Boolean(capability?.runtimeReady && platform.supported);
+    const live = Boolean(capability?.live && capability?.runtimeReady);
     return `
       <article class="source-card${platform.supported ? "" : " disabled"}">
         <div class="source-top">
-          <span class="pill ${ready ? "" : "offline"}">${ready ? "可运行" : (platform.supported ? "未就绪" : "即将支持")}</span>
-          <span class="kind">${platform.label}</span>
+          <span class="pill ${meta.tone === "danger" ? "danger" : meta.tone === "warning" ? "offline" : ""}">${meta.badge}</span>
+          <span class="kind">${capability?.serviceLabel || "默认链路"}</span>
         </div>
         <h3>${platform.label}</h3>
-        <p>${platform.description}</p>
+        <p class="source-desc">${platform.description}</p>
+        <div class="source-runtime">
+          <strong>${meta.runtime}</strong>
+          <p>${meta.detail}</p>
+        </div>
         <div class="capability-row">
           <span class="mini-pill ${capability?.search ? "" : "muted"}">发现</span>
           <span class="mini-pill ${capability?.fetch ? "" : "muted"}">抓取</span>
+          <span class="mini-pill ${capability?.serviceOnline ? "" : "muted"}">服务</span>
+          <span class="mini-pill ${capability?.loginStatus === "valid" || !capability?.loginRequired ? "" : "muted"}">登录</span>
           <span class="mini-pill ${live ? "" : "muted"}">在线</span>
         </div>
-        <p>${ready ? (live ? "在线抓取链路已具备，可直接用于实时任务。" : "当前主要依赖离线能力或模拟链路。") : "当前不会纳入运行预览，建议先补齐接入或登录。"}</p>
+        <dl class="source-facts">
+          <div>
+            <dt>站点名称</dt>
+            <dd>${platform.label}</dd>
+          </div>
+          <div>
+            <dt>站点说明</dt>
+            <dd>${platform.description}</dd>
+          </div>
+          <div>
+            <dt>登录状态</dt>
+            <dd>${capability?.loginRequired ? (capability?.loginStatus === "valid" ? "有效" : humanizeLoginReason(capability?.loginReason || capability?.loginStatus)) : "无需登录"}</dd>
+          </div>
+          <div>
+            <dt>检查时间</dt>
+            <dd>${capability?.lastCheckedAt ? formatDateTime(capability.lastCheckedAt) : "-"}</dd>
+          </div>
+        </dl>
       </article>
     `;
   }).join("");
@@ -298,18 +464,61 @@ function renderHeroSummary() {
   const supportedCount = PLATFORM_OPTIONS.filter((item) => item.supported).length;
   const readyCount = PLATFORM_OPTIONS.filter((item) => {
     const capability = capabilityMap.get(item.key);
-    return item.supported && capability?.search && capability?.fetch;
+    return item.supported && capability?.runtimeReady;
   }).length;
-  const liveCount = PLATFORM_OPTIONS.filter((item) => item.supported && capabilityMap.get(item.key)?.live).length;
+  const liveCount = PLATFORM_OPTIONS.filter((item) => item.supported && capabilityMap.get(item.key)?.runtimeReady && capabilityMap.get(item.key)?.live).length;
+  const issueCount = PLATFORM_OPTIONS.filter((item) => item.supported && !capabilityMap.get(item.key)?.runtimeReady).length;
 
   elements.heroPlatformCount.textContent = `${readyCount}/${supportedCount}`;
-  elements.heroPlatformMeta.textContent = "就绪平台 / 已接入平台";
+  elements.heroPlatformMeta.textContent = "默认链路可运行 / 已接入平台";
   elements.heroLiveCount.textContent = String(liveCount);
-  elements.heroLiveMeta.textContent = liveCount ? "已发现可在线抓取链路" : "当前没有在线抓取链路";
+  elements.heroLiveMeta.textContent = liveCount ? "已通过在线链路检查" : "当前没有通过在线复检的平台";
   elements.heroCatalogCount.textContent = String(state.catalogTotal);
   elements.heroCatalogMeta.textContent = state.catalogTotal ? "支持全文搜索、原文跳转和评论预览" : "本地库尚未积累数据";
   elements.heroJobCount.textContent = String(state.jobs.length);
   elements.heroJobMeta.textContent = state.jobs.length ? "可回看最近运行摘要" : "尚未产生历史任务";
+
+  if (state.backendHealthy === false) {
+    elements.healthBadge.textContent = "控制台离线";
+    elements.healthBadge.className = "hero-status offline";
+  } else if (issueCount === 0 && supportedCount > 0) {
+    elements.healthBadge.textContent = "链路复检通过";
+    elements.healthBadge.className = "hero-status";
+  } else if (issueCount > 0) {
+    elements.healthBadge.textContent = `${issueCount} 个平台待处理`;
+    elements.healthBadge.className = "hero-status offline";
+  } else {
+    elements.healthBadge.textContent = "正在检查链路";
+    elements.healthBadge.className = "hero-status";
+  }
+}
+
+function renderUpdateNotices() {
+  const notices = Array.isArray(state.updateNotices) ? state.updateNotices : [];
+  if (!notices.length) {
+    elements.updateNoticeBanner.classList.add("hidden");
+    elements.updateNoticeBanner.innerHTML = "";
+    return;
+  }
+
+  const items = notices.map((item) => `
+    <article class="update-banner-item">
+      <strong>${escapeHtml(localizeServiceName(item.service_name))}</strong>
+      <p>${escapeHtml(item.summary || "检测到上游有可拉取更新。")}</p>
+    </article>
+  `).join("");
+
+  elements.updateNoticeBanner.classList.remove("hidden");
+  elements.updateNoticeBanner.innerHTML = `
+    <div class="update-banner-head">
+      <div>
+        <p class="update-banner-title">发现上游更新</p>
+        <span class="update-banner-meta">当前服务已继续使用现有状态，方便你在合适的时候再执行更新。</span>
+      </div>
+      <span class="mini-pill">${escapeHtml(formatRelativeUpdateTime(state.updateCheckedAt) || "后台持续检测中")}</span>
+    </div>
+    <div class="update-banner-list">${items}</div>
+  `;
 }
 
 function setActiveWorkspaceTab(tab) {
@@ -808,21 +1017,33 @@ function isCatalogBaselineQuery() {
 async function loadHealth() {
   try {
     const payload = await requestJson("/health");
-    const ok = payload.status === "ok";
-    elements.healthBadge.textContent = ok ? "接口正常" : "接口状态未知";
-    elements.healthBadge.classList.toggle("offline", !ok);
+    state.backendHealthy = payload.status === "ok";
   } catch {
-    elements.healthBadge.textContent = "接口离线";
-    elements.healthBadge.classList.add("offline");
+    state.backendHealthy = false;
   }
+  renderHeroSummary();
 }
 
-async function loadSources() {
-  state.sources = await requestJson("/api/discovery/sources");
+async function loadSources(forceRefresh = false) {
+  const suffix = forceRefresh ? "?refresh=1" : "";
+  state.sources = await requestJson(`/api/discovery/sources${suffix}`);
   renderPlatformSelector();
   renderSourceCards();
   renderLocalPlatformOptions();
   renderHeroSummary();
+}
+
+async function loadUpdateNotices() {
+  try {
+    const payload = await requestJson("/api/discovery/notices");
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    state.updateCheckedAt = payload.checked_at || "";
+    state.updateNotices = items.filter((item) => item.status === "update_available");
+  } catch {
+    state.updateCheckedAt = "";
+    state.updateNotices = [];
+  }
+  renderUpdateNotices();
 }
 
 async function loadJobs() {
@@ -956,7 +1177,7 @@ async function onNextLocalPage() {
 function bindEvents() {
   elements.previewForm.addEventListener("submit", runPreview);
   elements.platformGrid.addEventListener("change", syncPlatformSelectionUi);
-  elements.refreshSourcesButton.addEventListener("click", loadSources);
+  elements.refreshSourcesButton.addEventListener("click", () => loadSources(true));
   elements.refreshJobsButton.addEventListener("click", loadJobs);
   elements.selectAllPlatformsButton.addEventListener("click", onSelectAllPlatforms);
   elements.clearPlatformsButton.addEventListener("click", onClearPlatforms);
@@ -1004,10 +1225,14 @@ async function bootstrap() {
   renderPlatformSelector();
   renderLocalPlatformOptions();
   renderHeroSummary();
+  renderUpdateNotices();
   renderWorkspace();
-  await Promise.allSettled([loadHealth(), loadSources(), loadJobs()]);
+  await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices()]);
   await loadLocalArticles();
   renderWorkspace();
+  window.setInterval(() => {
+    loadUpdateNotices();
+  }, 60000);
 }
 
 bootstrap();

@@ -105,8 +105,11 @@ class ApiIntegrationTests(unittest.TestCase):
     def test_health_and_sources(self) -> None:
         health = self.get_json("/health")
         sources = self.get_json("/api/discovery/sources")
+        notices = self.get_json("/api/discovery/notices")
         self.assertEqual(health["status"], "ok")
         self.assertEqual(len(sources), 14)
+        self.assertIn("items", notices)
+        self.assertIsInstance(notices["items"], list)
         self.assertEqual({item["kind"] for item in sources}, {"search", "fetch"})
         self.assertEqual(
             {item["platform"] for item in sources},
@@ -122,6 +125,11 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertTrue(any(item["name"] == "bilibili_external_fetch" for item in sources))
         self.assertTrue(any(item["name"] == "douyin_external_search" for item in sources))
         self.assertTrue(any(item["name"] == "douyin_external_fetch" for item in sources))
+        wechat_source = next(item for item in sources if item["name"] == "wechat_exporter_fetch")
+        self.assertIn("service_online", wechat_source)
+        self.assertIn("login_status", wechat_source)
+        self.assertIn("runtime_state", wechat_source)
+        self.assertIn("status_summary", wechat_source)
 
     def test_preview_and_job_queries(self) -> None:
         preview = self.post_json(

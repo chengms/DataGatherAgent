@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -43,9 +44,10 @@ class ManageServicesTests(unittest.TestCase):
             "manage_services.ensure_required_env"
         ), patch("manage_services.run_command") as run_command:
             manage_services.prepare_service(service, {}, {}, update=False, skip_install=False)
-        self.assertEqual(run_command.call_count, 2)
+        self.assertEqual(run_command.call_count, 3)
         self.assertEqual(run_command.call_args_list[0].args[0], ["uv", "sync"])
         self.assertEqual(run_command.call_args_list[1].args[0], ["uv", "run", "playwright", "install"])
+        self.assertEqual(run_command.call_args_list[2].args[0][1], "scripts/ensure_mediacrawler_xhs_dependency.py")
 
     def test_prepare_service_can_skip_install(self) -> None:
         service = {"name": "backend", "kind": "internal", "cwd": ".", "install": ["python", "-m", "pip", "install", "-e", "."]}
@@ -83,6 +85,72 @@ class ManageServicesTests(unittest.TestCase):
             pids_for_port.side_effect = [[111], []]
             manage_services.command_stop()
         stop_pid.assert_called_once_with(111)
+
+    def test_cleanup_stale_git_lock_removes_old_lock_without_git_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_dir = Path(tempdir)
+            git_dir = repo_dir / ".git"
+            git_dir.mkdir()
+            lock_path = git_dir / "index.lock"
+            lock_path.write_text("locked", encoding="utf-8")
+            with patch("manage_services.git_process_running", return_value=False), patch(
+                "manage_services.time.time", return_value=lock_path.stat().st_mtime + 120
+            ):
+                manage_services.cleanup_stale_git_lock(repo_dir)
+            self.assertFalse(lock_path.exists())
+
+    def test_spawn_service_uses_utf8_decoding_for_child_output(self) -> None:
+        service = {"name": "wechat_exporter", "start": ["node", "server.js"]}
+        with patch("manage_services.resolve_command", return_value=["node", "server.js"]), patch(
+            "manage_services.subprocess.Popen"
+        ) as popen, patch("manage_services.threading.Thread") as thread_cls:
+            manage_services.spawn_service(service, Path("."), {})
+        kwargs = popen.call_args.kwargs
+        self.assertTrue(kwargs["text"])
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
+        self.assertEqual(thread_cls.call_count, 2)
+
+    def test_start_prepared_services_reuses_existing_port_listener(self) -> None:
+        service = {"name": "wechat_exporter", "ready_port": 3000}
+        prepared = [(service, Path("."), {})]
+        with patch("manage_services.is_port_in_use", return_value=True), patch(
+            "manage_services.ensure_service_ready"
+        ) as ensure_service_ready, patch("manage_services.spawn_service") as spawn_service, patch(
+            "manage_services.time.sleep", side_effect=KeyboardInterrupt
+        ):
+            manage_services.start_prepared_services(prepared)
+        ensure_service_ready.assert_called_once_with(service)
+        spawn_service.assert_not_called()
+
+    def test_command_up_reuses_healthy_service_and_skips_prepare(self) -> None:
+        service = {"name": "backend", "kind": "internal", "cwd": "backend", "ready_port": 8000}
+        with patch("manage_services.load_manifest", return_value=([service], {}, {})), patch(
+            "manage_services.service_is_healthy", return_value=True
+        ), patch(
+            "manage_services.resolve_service_cwd", return_value=Path("backend")
+        ), patch(
+            "manage_services.merged_env", return_value={"PYTHONUNBUFFERED": "1"}
+        ), patch(
+            "manage_services.ensure_required_env"
+        ) as ensure_required_env, patch(
+            "manage_services.prepare_service"
+        ) as prepare_service, patch(
+            "manage_services.start_prepared_services"
+        ) as start_prepared_services:
+            manage_services.command_up(update=True, skip_install=False)
+        ensure_required_env.assert_called_once_with(service, {"PYTHONUNBUFFERED": "1"})
+        prepare_service.assert_not_called()
+        start_prepared_services.assert_called_once()
+
+    def test_refresh_update_status_records_available_updates(self) -> None:
+        service = {"name": "wechat_exporter", "kind": "managed_repo", "repo_dir": "external_tools/wechat-article-exporter"}
+        with patch("manage_services.inspect_repo_update", return_value={"service_name": "wechat_exporter", "status": "update_available", "ahead_by": 2, "summary": "origin/master is ahead by 2 commit(s)"}), patch(
+            "manage_services.write_update_status"
+        ) as write_update_status:
+            payload = manage_services.refresh_update_status([service])
+        self.assertEqual(payload["items"][0]["status"], "update_available")
+        write_update_status.assert_called_once_with(payload)
 
 
 if __name__ == "__main__":

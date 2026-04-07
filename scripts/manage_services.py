@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,8 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT_DIR / "services.manifest.json"
 LOCAL_OVERRIDE_PATH = ROOT_DIR / "services.local.json"
+RUNTIME_DIR = ROOT_DIR / ".runtime"
+UPDATE_STATUS_PATH = RUNTIME_DIR / "service_updates.json"
 
 
 def log(message: str) -> None:
@@ -104,6 +107,16 @@ def is_port_in_use(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def service_is_healthy(service: dict[str, Any]) -> bool:
+    ready_port = service.get("ready_port")
+    if ready_port and not is_port_in_use(int(ready_port)):
+        return False
+    healthcheck_url = service.get("healthcheck_url")
+    if healthcheck_url:
+        return probe_healthcheck(str(healthcheck_url))
+    return bool(ready_port)
+
+
 def pids_for_port(port: int) -> list[int]:
     if os.name == "nt":
         completed = subprocess.run(
@@ -160,6 +173,46 @@ def stop_pid(pid: int) -> None:
         return
 
 
+def git_process_running() -> bool:
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return False
+        return any('"git.exe"' in line.lower() for line in completed.stdout.splitlines())
+
+    completed = subprocess.run(
+        ["pgrep", "-f", "git"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0 and bool(completed.stdout.strip())
+
+
+def cleanup_stale_git_lock(repo_dir: Path, *, stale_after_seconds: int = 60) -> None:
+    lock_path = repo_dir / ".git" / "index.lock"
+    if not lock_path.exists():
+        return
+    if git_process_running():
+        raise RuntimeError(
+            f"managed repository {repo_dir} has an active .git/index.lock; another git process appears to still be running"
+        )
+
+    age_seconds = time.time() - lock_path.stat().st_mtime
+    if age_seconds < stale_after_seconds:
+        raise RuntimeError(
+            f"managed repository {repo_dir} has a recent .git/index.lock ({age_seconds:.0f}s old); wait briefly and retry"
+        )
+
+    lock_path.unlink()
+    log(f"removed stale git lock {lock_path}")
+
+
 def resolve_command(command: list[str]) -> list[str]:
     if not command:
         return command
@@ -187,6 +240,22 @@ def run_command(command: list[str], cwd: Path, env: dict[str, str]) -> None:
     completed = subprocess.run(command, cwd=cwd, env=env, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"command failed with exit code {completed.returncode}: {shlex.join(command)}")
+
+
+def ensure_post_install_dependencies(service: dict[str, Any], cwd: Path) -> None:
+    if service["name"] != "mediacrawler_xhs":
+        return
+    run_command(
+        [sys.executable, "scripts/ensure_mediacrawler_xhs_dependency.py", "--repo", str(cwd)],
+        ROOT_DIR,
+        os.environ.copy(),
+    )
+
+
+def resolve_service_cwd(service: dict[str, Any]) -> Path:
+    if service["kind"] == "managed_repo":
+        return resolve_path(service["repo_dir"])
+    return resolve_path(service["cwd"])
 
 
 def git_output(args: list[str], cwd: Path) -> str:
@@ -262,6 +331,7 @@ def ensure_managed_repo(service: dict[str, Any], update: bool) -> Path:
     if not (repo_dir / ".git").exists():
         raise RuntimeError(f"{repo_dir} exists but is not a git repository")
 
+    cleanup_stale_git_lock(repo_dir)
     cleanup_generated_paths(service, repo_dir)
 
     status = filter_generated_status(service, git_output(["status", "--porcelain"], repo_dir))
@@ -280,7 +350,12 @@ def ensure_managed_repo(service: dict[str, Any], update: bool) -> Path:
 
 def stream_output(pipe, prefix: str) -> None:
     try:
-        for line in iter(pipe.readline, ""):
+        while True:
+            try:
+                line = pipe.readline()
+            except (UnicodeDecodeError, OSError, ValueError) as exc:
+                log(f"{prefix} output stream closed unexpectedly: {exc}")
+                break
             if not line:
                 break
             print(f"[{prefix}] {line.rstrip()}", flush=True)
@@ -298,6 +373,8 @@ def spawn_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> su
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
     threading.Thread(target=stream_output, args=(process.stdout, service["name"]), daemon=True).start()
@@ -435,7 +512,7 @@ def prepare_service(
     if service["kind"] == "managed_repo":
         cwd = ensure_managed_repo(service, update=update)
     else:
-        cwd = resolve_path(service["cwd"])
+        cwd = resolve_service_cwd(service)
     env = merged_env(service, global_env, overrides)
     ensure_required_env(service, env)
     install_command = service.get("install")
@@ -445,7 +522,122 @@ def prepare_service(
                 run_command(step, cwd, env)
         else:
             run_command(install_command, cwd, env)
+        ensure_post_install_dependencies(service, cwd)
     return cwd, env
+
+
+def write_update_status(payload: dict[str, Any]) -> None:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    UPDATE_STATUS_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def read_update_status() -> dict[str, Any]:
+    if not UPDATE_STATUS_PATH.exists():
+        return {"checked_at": None, "items": []}
+    try:
+        return load_json(UPDATE_STATUS_PATH)
+    except (json.JSONDecodeError, OSError):
+        return {"checked_at": None, "items": []}
+
+
+def inspect_repo_update(service: dict[str, Any]) -> dict[str, Any]:
+    if service.get("kind") != "managed_repo":
+        return {
+            "service_name": service["name"],
+            "status": "not_managed",
+            "summary": "internal service",
+        }
+
+    repo_dir = resolve_service_cwd(service)
+    branch = str(service.get("branch", "main"))
+    if not repo_dir.exists() or not (repo_dir / ".git").exists():
+        return {
+            "service_name": service["name"],
+            "status": "missing",
+            "branch": branch,
+            "summary": "repository not available locally",
+        }
+
+    try:
+        cleanup_stale_git_lock(repo_dir)
+        fetch_command = resolve_command(["git", "fetch", "origin", branch])
+        completed = subprocess.run(
+            fetch_command,
+            cwd=repo_dir,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=180,
+        )
+        if completed.returncode != 0:
+            return {
+                "service_name": service["name"],
+                "status": "error",
+                "branch": branch,
+                "summary": completed.stderr.strip()[:200] or "git fetch failed",
+            }
+
+        ahead_by = int(git_output(["rev-list", "--count", f"HEAD..origin/{branch}"], repo_dir) or "0")
+        local_sha = git_output(["rev-parse", "--short", "HEAD"], repo_dir) or ""
+        remote_sha = git_output(["rev-parse", "--short", f"origin/{branch}"], repo_dir) or ""
+    except (RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
+        return {
+            "service_name": service["name"],
+            "status": "error",
+            "branch": branch,
+            "summary": str(exc),
+        }
+
+    if ahead_by > 0:
+        summary = f"origin/{branch} is ahead by {ahead_by} commit(s)"
+        status = "update_available"
+    else:
+        summary = "already on the latest remote revision"
+        status = "up_to_date"
+
+    return {
+        "service_name": service["name"],
+        "status": status,
+        "branch": branch,
+        "ahead_by": ahead_by,
+        "local_sha": local_sha,
+        "remote_sha": remote_sha,
+        "summary": summary,
+    }
+
+
+def refresh_update_status(services: list[dict[str, Any]]) -> dict[str, Any]:
+    checked_at = datetime.now(UTC).isoformat()
+    items = [inspect_repo_update(service) for service in services]
+    payload = {"checked_at": checked_at, "items": items}
+    write_update_status(payload)
+    return payload
+
+
+def start_update_monitor(
+    services: list[dict[str, Any]],
+    *,
+    interval_seconds: int = 900,
+) -> tuple[threading.Event, threading.Thread]:
+    stop_event = threading.Event()
+
+    def run() -> None:
+        while not stop_event.is_set():
+            try:
+                refresh_update_status(services)
+            except Exception as exc:
+                log(f"update monitor failed: {exc}")
+            stop_event.wait(interval_seconds)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return stop_event, thread
 
 
 def command_ensure_repos(update: bool, *, skip_install: bool) -> None:
@@ -479,11 +671,13 @@ def command_up(update: bool, *, skip_install: bool) -> None:
     services, global_env, overrides = load_manifest()
     prepared: list[tuple[dict[str, Any], Path, dict[str, str]]] = []
     for service in services:
-        ready_port = service.get("ready_port")
-        if ready_port and is_port_in_use(int(ready_port)):
-            raise RuntimeError(
-                f"{service['name']} cannot start because port {ready_port} is already in use"
-            )
+        if service_is_healthy(service):
+            cwd = resolve_service_cwd(service)
+            env = merged_env(service, global_env, overrides)
+            ensure_required_env(service, env)
+            prepared.append((service, cwd, env))
+            log(f"reusing healthy {service['name']} service and skipping update/install")
+            continue
         cwd, env = prepare_service(service, global_env, overrides, update=update, skip_install=skip_install)
         prepared.append((service, cwd, env))
 
@@ -518,9 +712,15 @@ def start_prepared_services(
     next_health_check = {service["name"]: time.time() for service, _, _ in prepared}
     next_login_check = {service["name"]: time.time() for service, _, _ in prepared}
     last_login_alert = {service["name"]: 0.0 for service, _, _ in prepared}
+    update_monitor_stop, _ = start_update_monitor([service for service, _, _ in prepared])
     try:
         for service, cwd, env in prepared:
             if service["name"] in started_names:
+                ensure_service_ready(service)
+                continue
+            ready_port = service.get("ready_port")
+            if ready_port and is_port_in_use(int(ready_port)):
+                log(f"reusing existing {service['name']} service on port {ready_port}")
                 ensure_service_ready(service)
                 continue
             process = spawn_service(service, cwd, env)
@@ -580,6 +780,7 @@ def start_prepared_services(
     except KeyboardInterrupt:
         log("stopping services")
     finally:
+        update_monitor_stop.set()
         for service, process in reversed(processes):
             if process.poll() is None:
                 process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
