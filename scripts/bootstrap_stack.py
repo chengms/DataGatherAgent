@@ -70,6 +70,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="If WeChat login is invalid, run the terminal QR login flow before continuing startup.",
     )
+    parser.add_argument(
+        "--interactive-platform-logins",
+        action="store_true",
+        help="If crawler platform logins are invalid, run their interactive login flows before continuing startup.",
+    )
     parser.add_argument("--skip-xhs-login", action="store_true", help="Skip the Xiaohongshu QR login step.")
     parser.add_argument("--skip-weibo-login", action="store_true", help="Skip the Weibo QR login step.")
     parser.add_argument("--skip-douyin-login", action="store_true", help="Skip the Douyin QR login step.")
@@ -260,6 +265,8 @@ def ensure_wechat_login(
 
 def ensure_mediacrawler_platform_login(
     platform: str,
+    *,
+    interactive_refresh: bool = False,
     report: dict[str, list[dict[str, str]]] | None = None,
 ) -> None:
     status = run_json_script("mediacrawler_login_status.py", "--platforms", platform)
@@ -271,6 +278,17 @@ def ensure_mediacrawler_platform_login(
 
     previous_reason = str(status.get("reason") or "unknown")
     manage_services.log(f"{platform} login requires refresh: {previous_reason}")
+    if not interactive_refresh:
+        manage_services.log(f"{platform} login requires manual refresh in the web console; continuing startup")
+        if report is not None:
+            add_report_entry(
+                report,
+                "checks",
+                f"{platform} login",
+                "skipped",
+                f"{previous_reason}; finish login from the web console after startup",
+            )
+        return
     run_login_script("mediacrawler_terminal_login.py", "--platform", platform)
     status = run_json_script("mediacrawler_login_status.py", "--platforms", platform)
     if not bool(status.get("ok")):
@@ -330,19 +348,35 @@ def main() -> int:
         else:
             add_report_entry(report, "checks", "wechat login", "skipped", "skip flag enabled")
         if not args.skip_xhs_login:
-            ensure_mediacrawler_platform_login("xhs", report=report)
+            ensure_mediacrawler_platform_login(
+                "xhs",
+                interactive_refresh=args.interactive_platform_logins,
+                report=report,
+            )
         else:
             add_report_entry(report, "checks", "xhs login", "skipped", "skip flag enabled")
         if not args.skip_weibo_login:
-            ensure_mediacrawler_platform_login("weibo", report=report)
+            ensure_mediacrawler_platform_login(
+                "weibo",
+                interactive_refresh=args.interactive_platform_logins,
+                report=report,
+            )
         else:
             add_report_entry(report, "checks", "weibo login", "skipped", "skip flag enabled")
         if not args.skip_douyin_login:
-            ensure_mediacrawler_platform_login("douyin", report=report)
+            ensure_mediacrawler_platform_login(
+                "douyin",
+                interactive_refresh=args.interactive_platform_logins,
+                report=report,
+            )
         else:
             add_report_entry(report, "checks", "douyin login", "skipped", "skip flag enabled")
         if not args.skip_bilibili_login:
-            ensure_mediacrawler_platform_login("bilibili", report=report)
+            ensure_mediacrawler_platform_login(
+                "bilibili",
+                interactive_refresh=args.interactive_platform_logins,
+                report=report,
+            )
         else:
             add_report_entry(report, "checks", "bilibili login", "skipped", "skip flag enabled")
 

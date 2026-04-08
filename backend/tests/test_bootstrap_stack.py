@@ -129,8 +129,19 @@ class BootstrapStackTests(unittest.TestCase):
             "bootstrap_stack.run_json_script",
             side_effect=[{"ok": False, "reason": "xhs:cookie_invalid"}, {"ok": True, "reason": "ok"}],
         ), patch("bootstrap_stack.run_login_script") as run_login_script:
-            bootstrap_stack.ensure_mediacrawler_platform_login("xhs")
+            bootstrap_stack.ensure_mediacrawler_platform_login("xhs", interactive_refresh=True)
         run_login_script.assert_called_once_with("mediacrawler_terminal_login.py", "--platform", "xhs")
+
+    def test_ensure_mediacrawler_platform_login_defers_manual_refresh_by_default(self) -> None:
+        report = {"services": [], "checks": [], "startup": []}
+        with patch(
+            "bootstrap_stack.run_json_script",
+            return_value={"ok": False, "reason": "weibo:missing_cookies"},
+        ), patch("bootstrap_stack.run_login_script") as run_login_script:
+            bootstrap_stack.ensure_mediacrawler_platform_login("weibo", report=report)
+        run_login_script.assert_not_called()
+        self.assertEqual(report["checks"][0]["status"], "skipped")
+        self.assertIn("web console", report["checks"][0]["detail"])
 
 
 if __name__ == "__main__":
