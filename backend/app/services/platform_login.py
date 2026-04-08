@@ -16,7 +16,7 @@ from app.core.exceptions import NetworkError, NotFoundError
 REPO_ROOT = BASE_DIR.parent
 RUNTIME_DIR = REPO_ROOT / ".runtime" / "platform_login"
 DEFAULT_MEDIACRAWLER_REPO = REPO_ROOT / "external_tools" / "MediaCrawler"
-SUPPORTED_PLATFORMS = {"xhs"}
+SUPPORTED_PLATFORMS = {"xhs", "weibo", "douyin", "bilibili"}
 
 
 @dataclass

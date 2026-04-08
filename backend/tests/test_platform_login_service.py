@@ -44,6 +44,15 @@ class PlatformLoginServiceTests(unittest.TestCase):
         with self.assertRaises(Exception):
             service.start_session("unknown")
 
+    def test_start_session_accepts_supported_platform(self) -> None:
+        service = PlatformLoginService()
+        with tempfile.TemporaryDirectory() as tempdir, patch("app.services.platform_login.RUNTIME_DIR", Path(tempdir)):
+            fake_process = type("Proc", (), {"poll": lambda self: None})()
+            with patch("app.services.platform_login.subprocess.Popen", return_value=fake_process):
+                payload = service.start_session("weibo")
+        self.assertEqual(payload["platform"], "weibo")
+        self.assertEqual(payload["status"], "starting")
+
 
 if __name__ == "__main__":
     unittest.main()

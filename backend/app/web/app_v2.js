@@ -14,6 +14,33 @@ const CONTENT_KIND_LABELS = {
   mixed: "混合",
 };
 
+const PLATFORM_LOGIN_CONFIG = {
+  xiaohongshu: {
+    apiPlatform: "xhs",
+    title: "小红书无头登录",
+    intro: "二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。",
+    scanLabel: "小红书 App",
+  },
+  weibo: {
+    apiPlatform: "weibo",
+    title: "微博无头登录",
+    intro: "二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。",
+    scanLabel: "微博 App",
+  },
+  douyin: {
+    apiPlatform: "douyin",
+    title: "抖音无头登录",
+    intro: "二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。",
+    scanLabel: "抖音 App",
+  },
+  bilibili: {
+    apiPlatform: "bilibili",
+    title: "B站无头登录",
+    intro: "二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。",
+    scanLabel: "哔哩哔哩 App",
+  },
+};
+
 const DEFAULT_SELECTED_PLATFORMS = new Set(["wechat", "xiaohongshu"]);
 
 const state = {
@@ -31,7 +58,9 @@ const state = {
     message: "",
     pollTimer: 0,
   },
-  xhsLogin: {
+  platformLogin: {
+    platformKey: "",
+    apiPlatform: "",
     sessionId: "",
     qrcodeDataUrl: "",
     status: "idle",
@@ -86,6 +115,7 @@ const elements = {
   refreshSourcesButton: document.getElementById("refreshSourcesButton"),
   refreshJobsButton: document.getElementById("refreshJobsButton"),
   sourcesGrid: document.getElementById("sourcesGrid"),
+  loginSettingsGrid: document.getElementById("loginSettingsGrid"),
   workspaceMeta: document.getElementById("workspaceMeta"),
   tabHotButton: document.getElementById("tabHotButton"),
   tabFetchedButton: document.getElementById("tabFetchedButton"),
@@ -133,12 +163,15 @@ const elements = {
   wechatLoginStatus: document.getElementById("wechatLoginStatus"),
   wechatLoginQrImage: document.getElementById("wechatLoginQrImage"),
   wechatLoginQrPlaceholder: document.getElementById("wechatLoginQrPlaceholder"),
-  xhsLoginModal: document.getElementById("xhsLoginModal"),
-  closeXhsLoginButton: document.getElementById("closeXhsLoginButton"),
-  refreshXhsLoginButton: document.getElementById("refreshXhsLoginButton"),
-  xhsLoginStatus: document.getElementById("xhsLoginStatus"),
-  xhsLoginQrImage: document.getElementById("xhsLoginQrImage"),
-  xhsLoginQrPlaceholder: document.getElementById("xhsLoginQrPlaceholder"),
+  platformLoginModal: document.getElementById("platformLoginModal"),
+  closePlatformLoginButton: document.getElementById("closePlatformLoginButton"),
+  refreshPlatformLoginButton: document.getElementById("refreshPlatformLoginButton"),
+  platformLoginTitle: document.getElementById("platformLoginTitle"),
+  platformLoginMeta: document.getElementById("platformLoginMeta"),
+  platformLoginStatus: document.getElementById("platformLoginStatus"),
+  platformLoginQrImage: document.getElementById("platformLoginQrImage"),
+  platformLoginQrPlaceholder: document.getElementById("platformLoginQrPlaceholder"),
+  platformLoginSteps: document.getElementById("platformLoginSteps"),
 };
 
 function escapeHtml(value) {
@@ -209,6 +242,33 @@ function humanizeLoginReason(reason) {
     return "B站登录信息已过期";
   }
   return reason || "未返回更多信息";
+}
+
+function getPlatformLoginConfig(platformKey) {
+  return PLATFORM_LOGIN_CONFIG[platformKey] || null;
+}
+
+function getPlatformLoginButtonLabel(platformKey, capability) {
+  if (!capability?.serviceOnline) {
+    return `先启动${capability?.serviceLabel || "关联服务"}`;
+  }
+  if (platformKey === "wechat") {
+    return "公众号扫码登录";
+  }
+  return `${localizePlatform(platformKey)}扫码登录`;
+}
+
+function renderPlatformLoginSteps(platformKey) {
+  const config = getPlatformLoginConfig(platformKey);
+  if (!config) {
+    elements.platformLoginSteps.innerHTML = "";
+    return;
+  }
+  elements.platformLoginSteps.innerHTML = [
+    `1. 使用${escapeHtml(config.scanLabel)}扫码。`,
+    "2. 按提示确认登录。",
+    "3. 后台会自动保存 Cookie 并刷新平台状态。",
+  ].map((line) => `<p>${line}</p>`).join("");
 }
 
 function getPlatformStateMeta(platform, capability) {
@@ -445,9 +505,6 @@ function renderSourceCards() {
     const meta = getPlatformStateMeta(platform, capability);
     const ready = Boolean(capability?.runtimeReady && platform.supported);
     const live = Boolean(capability?.live && capability?.runtimeReady);
-    const showWechatLogin = platform.key === "wechat";
-    const wechatLoginLabel = capability?.serviceOnline ? "公众号扫码登录" : "先启动公众号服务";
-    const showXhsLogin = platform.key === "xiaohongshu";
     return `
       <article class="source-card${platform.supported ? "" : " disabled"}">
         <div class="source-top">
@@ -485,37 +542,62 @@ function renderSourceCards() {
             <dd>${capability?.lastCheckedAt ? formatDateTime(capability.lastCheckedAt) : "-"}</dd>
           </div>
         </dl>
-        ${showWechatLogin ? `
-          <div class="card-actions">
-            <button
-              type="button"
-              class="link-button"
-              data-open-wechat-login="1"
-              ${capability?.serviceOnline ? "" : "disabled"}
-            >${wechatLoginLabel}</button>
-          </div>
-        ` : ""}
-        ${showXhsLogin ? `
-          <div class="card-actions">
-            <button
-              type="button"
-              class="link-button"
-              data-open-xhs-login="1"
-            >小红书无头登录</button>
-          </div>
-        ` : ""}
+      </article>
+    `;
+  }).join("");
+}
+
+function renderLoginSettings() {
+  const capabilityMap = buildCapabilityMap();
+  const loginPlatforms = PLATFORM_OPTIONS.filter((platform) => platform.key === "wechat" || getPlatformLoginConfig(platform.key));
+  elements.loginSettingsGrid.innerHTML = loginPlatforms.map((platform) => {
+    const capability = capabilityMap.get(platform.key);
+    const meta = getPlatformStateMeta(platform, capability);
+    const actionLabel = getPlatformLoginButtonLabel(platform.key, capability);
+    const canOpen = Boolean(capability?.serviceOnline);
+    const actionHint = platform.key === "wechat"
+      ? "二维码会通过公众号服务生成并显示在当前页面。"
+      : "二维码会通过无头登录会话生成并显示在当前页面。";
+    return `
+      <article class="source-card${platform.supported ? "" : " disabled"}">
+        <div class="source-top">
+          <span class="pill ${meta.tone === "danger" ? "danger" : meta.tone === "warning" ? "offline" : ""}">${meta.badge}</span>
+          <span class="kind">${capability?.serviceLabel || "默认链路"}</span>
+        </div>
+        <h3>${platform.label}</h3>
+        <p class="source-desc">${platform.description}</p>
+        <div class="source-runtime">
+          <strong>${capability?.loginRequired ? (capability?.loginStatus === "valid" ? "当前登录有效" : humanizeLoginReason(capability?.loginReason || capability?.loginStatus)) : "当前平台无需登录"}</strong>
+          <p>${actionHint}</p>
+        </div>
+        <div class="capability-row">
+          <span class="mini-pill ${capability?.serviceOnline ? "" : "muted"}">服务</span>
+          <span class="mini-pill ${capability?.loginStatus === "valid" || !capability?.loginRequired ? "" : "muted"}">登录</span>
+          <span class="mini-pill ${capability?.runtimeReady ? "" : "muted"}">链路</span>
+        </div>
+        <div class="card-actions">
+          <button
+            type="button"
+            class="link-button"
+            data-open-login="${platform.key}"
+            ${canOpen ? "" : "disabled"}
+          >${actionLabel}</button>
+        </div>
       </article>
     `;
   }).join("");
 
-  elements.sourcesGrid.querySelectorAll("button[data-open-wechat-login]").forEach((button) => {
+  elements.loginSettingsGrid.querySelectorAll("button[data-open-login]").forEach((button) => {
+    const platformKey = button.getAttribute("data-open-login");
     button.addEventListener("click", () => {
-      openWechatLoginModal();
-    });
-  });
-  elements.sourcesGrid.querySelectorAll("button[data-open-xhs-login]").forEach((button) => {
-    button.addEventListener("click", () => {
-      openXhsLoginModal();
+      if (!platformKey) {
+        return;
+      }
+      if (platformKey === "wechat") {
+        openWechatLoginModal();
+        return;
+      }
+      openPlatformLoginModal(platformKey);
     });
   });
 }
@@ -1142,119 +1224,148 @@ async function openWechatLoginModal() {
   await createWechatLoginSession();
 }
 
-function clearXhsLoginPollTimer() {
-  if (state.xhsLogin.pollTimer) {
-    window.clearTimeout(state.xhsLogin.pollTimer);
-    state.xhsLogin.pollTimer = 0;
+function clearPlatformLoginPollTimer() {
+  if (state.platformLogin.pollTimer) {
+    window.clearTimeout(state.platformLogin.pollTimer);
+    state.platformLogin.pollTimer = 0;
   }
 }
 
-function renderXhsLoginModal() {
-  const loginState = state.xhsLogin;
-  elements.xhsLoginStatus.textContent = loginState.message || "等待开始。";
+function renderPlatformLoginModal() {
+  const loginState = state.platformLogin;
+  const config = getPlatformLoginConfig(loginState.platformKey);
+  elements.platformLoginTitle.textContent = config?.title || "平台无头登录";
+  elements.platformLoginMeta.textContent = config?.intro || "二维码由无头 Playwright 会话生成，扫码后后台会继续自动完成登录。";
+  elements.platformLoginStatus.textContent = loginState.message || "等待开始。";
+  renderPlatformLoginSteps(loginState.platformKey);
   const hasQr = Boolean(loginState.qrcodeDataUrl);
-  elements.xhsLoginQrImage.classList.toggle("hidden", !hasQr);
-  elements.xhsLoginQrPlaceholder.classList.toggle("hidden", hasQr);
-  elements.xhsLoginQrPlaceholder.textContent = hasQr
+  elements.platformLoginQrImage.classList.toggle("hidden", !hasQr);
+  elements.platformLoginQrPlaceholder.classList.toggle("hidden", hasQr);
+  elements.platformLoginQrPlaceholder.textContent = hasQr
     ? ""
     : (loginState.message || "正在准备二维码...");
+  elements.platformLoginQrImage.alt = config ? `${config.title}二维码` : "平台登录二维码";
   if (hasQr) {
-    elements.xhsLoginQrImage.src = loginState.qrcodeDataUrl;
+    elements.platformLoginQrImage.src = loginState.qrcodeDataUrl;
   } else {
-    elements.xhsLoginQrImage.removeAttribute("src");
+    elements.platformLoginQrImage.removeAttribute("src");
   }
 }
 
-function showXhsLoginModal() {
-  elements.xhsLoginModal.classList.remove("hidden");
-  elements.xhsLoginModal.setAttribute("aria-hidden", "false");
+function showPlatformLoginModal() {
+  elements.platformLoginModal.classList.remove("hidden");
+  elements.platformLoginModal.setAttribute("aria-hidden", "false");
 }
 
-async function closeXhsLoginModal() {
-  clearXhsLoginPollTimer();
-  const sessionId = state.xhsLogin.sessionId;
-  elements.xhsLoginModal.classList.add("hidden");
-  elements.xhsLoginModal.setAttribute("aria-hidden", "true");
-  state.xhsLogin = {
+async function closePlatformLoginModal() {
+  clearPlatformLoginPollTimer();
+  const sessionId = state.platformLogin.sessionId;
+  const apiPlatform = state.platformLogin.apiPlatform;
+  elements.platformLoginModal.classList.add("hidden");
+  elements.platformLoginModal.setAttribute("aria-hidden", "true");
+  state.platformLogin = {
+    platformKey: "",
+    apiPlatform: "",
     sessionId: "",
     qrcodeDataUrl: "",
     status: "idle",
     message: "",
     pollTimer: 0,
   };
-  renderXhsLoginModal();
-  if (sessionId) {
+  renderPlatformLoginModal();
+  if (sessionId && apiPlatform) {
     try {
-      await fetch(`/api/discovery/platform-login/xhs/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      await fetch(`/api/discovery/platform-login/${encodeURIComponent(apiPlatform)}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
     } catch {
       // ignore cleanup failure
     }
   }
 }
 
-function scheduleXhsLoginPoll() {
-  clearXhsLoginPollTimer();
-  state.xhsLogin.pollTimer = window.setTimeout(() => {
-    pollXhsLoginSession();
+function schedulePlatformLoginPoll() {
+  clearPlatformLoginPollTimer();
+  state.platformLogin.pollTimer = window.setTimeout(() => {
+    pollPlatformLoginSession();
   }, 2000);
 }
 
-async function pollXhsLoginSession() {
-  if (!state.xhsLogin.sessionId) {
+async function pollPlatformLoginSession() {
+  if (!state.platformLogin.sessionId || !state.platformLogin.apiPlatform) {
     return;
   }
   try {
-    const payload = await requestJson(`/api/discovery/platform-login/xhs/sessions/${encodeURIComponent(state.xhsLogin.sessionId)}`);
-    state.xhsLogin.status = payload.status || "starting";
-    state.xhsLogin.message = payload.message || "等待扫码确认。";
-    state.xhsLogin.qrcodeDataUrl = payload.qrcode_data_url || state.xhsLogin.qrcodeDataUrl;
-    renderXhsLoginModal();
+    const payload = await requestJson(
+      `/api/discovery/platform-login/${encodeURIComponent(state.platformLogin.apiPlatform)}/sessions/${encodeURIComponent(state.platformLogin.sessionId)}`,
+    );
+    state.platformLogin.status = payload.status || "starting";
+    state.platformLogin.message = payload.message || "等待扫码确认。";
+    state.platformLogin.qrcodeDataUrl = payload.qrcode_data_url || state.platformLogin.qrcodeDataUrl;
+    renderPlatformLoginModal();
     if (payload.status === "success") {
-      setStatus("小红书登录已更新。", "success");
+      setStatus(`${localizePlatform(state.platformLogin.platformKey)}登录已更新。`, "success");
       await loadSources(true);
       window.setTimeout(() => {
-        closeXhsLoginModal();
+        closePlatformLoginModal();
       }, 1200);
       return;
     }
     if (payload.status === "failed") {
       return;
     }
-    scheduleXhsLoginPoll();
+    schedulePlatformLoginPoll();
   } catch (error) {
-    state.xhsLogin.message = error.message || "小红书登录轮询失败，请稍后重试。";
-    renderXhsLoginModal();
+    state.platformLogin.message = error.message || `${localizePlatform(state.platformLogin.platformKey)}登录轮询失败，请稍后重试。`;
+    renderPlatformLoginModal();
   }
 }
 
-async function createXhsLoginSession() {
-  clearXhsLoginPollTimer();
-  state.xhsLogin.message = "正在准备无头登录二维码...";
-  state.xhsLogin.status = "starting";
-  state.xhsLogin.qrcodeDataUrl = "";
-  renderXhsLoginModal();
+async function createPlatformLoginSession() {
+  if (!state.platformLogin.apiPlatform || !state.platformLogin.platformKey) {
+    return;
+  }
+  clearPlatformLoginPollTimer();
+  const platformLabel = localizePlatform(state.platformLogin.platformKey);
+  state.platformLogin.message = `正在准备${platformLabel}登录二维码...`;
+  state.platformLogin.status = "starting";
+  state.platformLogin.qrcodeDataUrl = "";
+  renderPlatformLoginModal();
   try {
-    const payload = await requestJson("/api/discovery/platform-login/xhs/sessions", {
+    const payload = await requestJson(`/api/discovery/platform-login/${encodeURIComponent(state.platformLogin.apiPlatform)}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    state.xhsLogin.sessionId = payload.session_id || "";
-    state.xhsLogin.qrcodeDataUrl = payload.qrcode_data_url || "";
-    state.xhsLogin.status = payload.status || "starting";
-    state.xhsLogin.message = payload.message || "请使用小红书扫码登录。";
-    renderXhsLoginModal();
-    scheduleXhsLoginPoll();
+    state.platformLogin.sessionId = payload.session_id || "";
+    state.platformLogin.qrcodeDataUrl = payload.qrcode_data_url || "";
+    state.platformLogin.status = payload.status || "starting";
+    state.platformLogin.message = payload.message || `请使用${platformLabel}扫码登录。`;
+    renderPlatformLoginModal();
+    schedulePlatformLoginPoll();
   } catch (error) {
-    state.xhsLogin.status = "failed";
-    state.xhsLogin.message = error.message || "小红书无头登录启动失败。";
-    renderXhsLoginModal();
+    state.platformLogin.status = "failed";
+    state.platformLogin.message = error.message || `${platformLabel}无头登录启动失败。`;
+    renderPlatformLoginModal();
   }
 }
 
-async function openXhsLoginModal() {
-  showXhsLoginModal();
-  await createXhsLoginSession();
+async function openPlatformLoginModal(platformKey) {
+  const config = getPlatformLoginConfig(platformKey);
+  if (!config) {
+    return;
+  }
+  clearPlatformLoginPollTimer();
+  state.platformLogin = {
+    platformKey,
+    apiPlatform: config.apiPlatform,
+    sessionId: "",
+    qrcodeDataUrl: "",
+    status: "idle",
+    message: "",
+    pollTimer: 0,
+  };
+  showPlatformLoginModal();
+  renderPlatformLoginModal();
+  await createPlatformLoginSession();
 }
 
 async function openArticleModal(articleId) {
@@ -1335,6 +1446,7 @@ async function loadSources(forceRefresh = false) {
   state.sources = await requestJson(`/api/discovery/sources${suffix}`);
   renderPlatformSelector();
   renderSourceCards();
+  renderLoginSettings();
   renderLocalPlatformOptions();
   renderHeroSummary();
 }
@@ -1524,16 +1636,16 @@ function bindEvents() {
   elements.wechatLoginModal.querySelectorAll("[data-close-wechat-login]").forEach((node) => {
     node.addEventListener("click", closeWechatLoginModal);
   });
-  elements.closeXhsLoginButton.addEventListener("click", closeXhsLoginModal);
-  elements.refreshXhsLoginButton.addEventListener("click", createXhsLoginSession);
-  elements.xhsLoginModal.querySelectorAll("[data-close-xhs-login]").forEach((node) => {
-    node.addEventListener("click", closeXhsLoginModal);
+  elements.closePlatformLoginButton.addEventListener("click", closePlatformLoginModal);
+  elements.refreshPlatformLoginButton.addEventListener("click", createPlatformLoginSession);
+  elements.platformLoginModal.querySelectorAll("[data-close-platform-login]").forEach((node) => {
+    node.addEventListener("click", closePlatformLoginModal);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideModal();
       closeWechatLoginModal();
-      closeXhsLoginModal();
+      closePlatformLoginModal();
     }
   });
 }
@@ -1541,11 +1653,13 @@ function bindEvents() {
 async function bootstrap() {
   bindEvents();
   renderPlatformSelector();
+  renderSourceCards();
+  renderLoginSettings();
   renderLocalPlatformOptions();
   renderHeroSummary();
   renderUpdateNotices();
   renderWechatLoginModal();
-  renderXhsLoginModal();
+  renderPlatformLoginModal();
   renderWorkspace();
   await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices()]);
   await loadLocalArticles();

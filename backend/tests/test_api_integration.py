@@ -170,3 +170,8 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(status_code, 404)
         self.assertEqual(payload["error"]["code"], "NOT_FOUND")
 
+    def test_missing_weibo_login_session_returns_not_found(self) -> None:
+        status_code, payload = self.get_error_json("/api/discovery/platform-login/weibo/sessions/missing-session")
+        self.assertEqual(status_code, 404)
+        self.assertEqual(payload["error"]["code"], "NOT_FOUND")
+

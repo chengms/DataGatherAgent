@@ -65,7 +65,7 @@
       "restart_delay_seconds": 3,
       "healthcheck_interval_seconds": 30,
       "healthcheck_failure_threshold": 3,
-      "install": ["python", "-m", "pip", "install", "-e", "."],
+      "install": ["python", "../scripts/ensure_backend_ready.py"],
       "start": ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
       "env": {
         "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000",
