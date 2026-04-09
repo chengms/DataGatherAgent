@@ -95,6 +95,12 @@ class ApiArticleEndpointsTests(unittest.TestCase):
         except error.HTTPError as exc:
             return exc.code, json.loads(exc.read().decode("utf-8"))
 
+    @classmethod
+    def delete_json(cls, path: str) -> dict:
+        http_request = request.Request(cls.build_url(path), method="DELETE")
+        with request.urlopen(http_request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def test_article_search_and_detail_endpoints(self) -> None:
         preview = self.post_json(
             "/api/workflows/preview",
@@ -123,8 +129,31 @@ class ApiArticleEndpointsTests(unittest.TestCase):
         self.assertEqual(detail["id"], item["id"])
         self.assertEqual(detail["source_url"], item["source_url"])
         self.assertIn("content_text", detail)
+        self.assertIn("content_html", detail)
         self.assertIn("comments", detail)
         self.assertIsInstance(detail["comments"], list)
+
+    def test_delete_article_endpoint(self) -> None:
+        preview = self.post_json(
+            "/api/workflows/preview",
+            {
+                "keywords": ["Grid Storage"],
+                "platforms": ["wechat"],
+                "limit": 1,
+                "top_k": 1,
+                "fallback_to_mock": True,
+            },
+        )
+        payload = self.get_json(f"/api/workflows/articles?page=1&page_size=10&job_id={preview['job_id']}")
+        self.assertEqual(payload["total"], 1)
+        article_id = payload["items"][0]["id"]
+
+        deleted = self.delete_json(f"/api/workflows/articles/{article_id}")
+        self.assertEqual(deleted["id"], article_id)
+        self.assertTrue(deleted["deleted"])
+
+        refreshed = self.get_json(f"/api/workflows/articles?page=1&page_size=10&job_id={preview['job_id']}")
+        self.assertEqual(refreshed["total"], 0)
 
     def test_missing_article_returns_not_found(self) -> None:
         status_code, payload = self.get_error_json("/api/workflows/articles/999999")

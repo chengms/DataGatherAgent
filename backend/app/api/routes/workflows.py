@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.schemas.workflow import (
+    DeleteArticleResponse,
     FetchedArticleRecord,
     FetchedArticleSearchResponse,
     WorkflowJobDetail,
@@ -51,3 +52,8 @@ def search_fetched_articles(
 @router.get("/articles/{article_id}", response_model=FetchedArticleRecord)
 def get_fetched_article(article_id: int) -> FetchedArticleRecord:
     return workflow_service.get_fetched_article(article_id)
+
+
+@router.delete("/articles/{article_id}", response_model=DeleteArticleResponse)
+def delete_fetched_article(article_id: int) -> DeleteArticleResponse:
+    return workflow_service.delete_fetched_article(article_id)

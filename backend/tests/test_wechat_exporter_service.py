@@ -81,6 +81,7 @@ class WechatExporterServiceTests(unittest.TestCase):
         self.assertEqual(article.title, "AI Weekly")
         self.assertEqual(article.account_name, "AI Insight")
         self.assertIn("hello exporter", article.content_text)
+        self.assertIn("js_content", article.content_html)
 
 
 if __name__ == "__main__":

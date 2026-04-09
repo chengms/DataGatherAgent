@@ -562,6 +562,12 @@ textarea {
   color: var(--accent);
 }
 
+.link-button.danger-button,
+.ghost-button.danger-button {
+  background: rgba(194, 65, 12, 0.1);
+  color: var(--danger);
+}
+
 .pill,
 .mini-pill,
 .score-pill {
@@ -808,6 +814,20 @@ textarea {
   background: #fff;
   min-height: 160px;
   color: var(--ink);
+}
+
+.content-preview-frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.content-preview.empty-state {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
 }
 
 .comment-head {

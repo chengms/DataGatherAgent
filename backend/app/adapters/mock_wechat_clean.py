@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import md5
 
 from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter, BaseFetchAdapter
+from app.adapters.html_utils import text_to_html_fragment
 from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 
 
@@ -47,6 +48,11 @@ class MockWechatFetchAdapter(BaseFetchAdapter):
         read_count = max(2000, 20000 - sequence * 550)
         comment_count = max(20, 800 - sequence * 18)
         source_id = candidate.source_url.rstrip("/").split("/")[-1]
+        content_text = (
+            f"This is a mock article about {keyword}. "
+            f"It contains trends, cases, viewpoints, and a short hot-topic summary. "
+            f"Sequence {sequence}."
+        )
         return FetchedArticle(
             keyword=keyword,
             platform="wechat",
@@ -58,10 +64,7 @@ class MockWechatFetchAdapter(BaseFetchAdapter):
             publish_time=publish_time,
             read_count=read_count,
             comment_count=comment_count,
-            content_text=(
-                f"This is a mock article about {keyword}. "
-                f"It contains trends, cases, viewpoints, and a short hot-topic summary. "
-                f"Sequence {sequence}."
-            ),
+            content_text=content_text,
+            content_html=text_to_html_fragment(content_text),
             source_id=source_id,
         )

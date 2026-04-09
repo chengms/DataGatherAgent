@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.adapters.base import AdapterInfo, BaseFetchAdapter
+from app.adapters.html_utils import extract_html_fragment
 from app.core.exceptions import FetchRequestError
 from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
 
@@ -49,6 +50,7 @@ class WebFetchWechatAdapter(BaseFetchAdapter):
         account_name = self._first_text(soup.select_one("#js_name")) or candidate.account_name
         publish_time = self._extract_publish_time(soup, html)
         content_text = self._extract_content_text(soup)
+        content_html = extract_html_fragment(soup, ("#js_content", ".rich_media_content", "article"))
         read_count = self._extract_metric(html, ["read_num", "readCount"])
         comment_count = self._extract_metric(html, ["comment_id", "commentCount"])
         source_id = candidate.source_url.rstrip("/").split("/")[-1]
@@ -65,6 +67,7 @@ class WebFetchWechatAdapter(BaseFetchAdapter):
             read_count=read_count,
             comment_count=comment_count,
             content_text=content_text,
+            content_html=content_html,
             source_id=source_id,
         )
 

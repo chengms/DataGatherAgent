@@ -56,6 +56,7 @@ class FetchedArticle(BaseModel):
     read_count: int = 0
     comment_count: int = 0
     content_text: str
+    content_html: str = ""
     source_id: str
     comments: list[ArticleComment] = Field(default_factory=list)
 
@@ -142,8 +143,16 @@ class FetchedArticleRecord(BaseModel):
     read_count: int
     comment_count: int
     content_text: str
+    content_html: str = ""
     source_id: str
     comments: list[ArticleComment] = Field(default_factory=list)
+
+
+class DeleteArticleResponse(BaseModel):
+    id: int
+    job_id: int
+    title: str
+    deleted: bool = True
 
 
 class FetchedArticleSearchResponse(BaseModel):

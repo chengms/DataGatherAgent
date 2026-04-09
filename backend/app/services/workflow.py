@@ -1,6 +1,7 @@
 from app.db.init_db import ensure_db_initialized
 from app.core.exceptions import FetchRequestError, JobNotFoundError, NotFoundError, SearchRequestError
 from app.schemas.workflow import (
+    DeleteArticleResponse,
     FetchedArticleRecord,
     FetchedArticleSearchResponse,
     WorkflowJobDetail,
@@ -209,6 +210,18 @@ class WorkflowService:
         if row is None:
             raise NotFoundError(f"Article with id {article_id} not found", "Article")
         return FetchedArticleRecord.model_validate(row)
+
+    def delete_fetched_article(self, article_id: int) -> DeleteArticleResponse:
+        ensure_db_initialized()
+        row = workflow_repository.delete_fetched_article(article_id)
+        if row is None:
+            raise NotFoundError(f"Article with id {article_id} not found", "Article")
+        return DeleteArticleResponse(
+            id=int(row["id"]),
+            job_id=int(row["job_id"]),
+            title=str(row["title"]),
+            deleted=True,
+        )
 
 
 workflow_service = WorkflowService()

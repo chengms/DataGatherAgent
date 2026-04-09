@@ -273,13 +273,17 @@ Semiconductor</textarea>
     <article class="modal-panel">
       <div class="panel-head">
         <h2 id="modalTitle">本地预览</h2>
-        <button id="closeModalButton" class="ghost-button tiny" type="button">关闭</button>
+        <div class="inline-actions">
+          <button id="deleteModalArticleButton" class="ghost-button tiny danger-button" type="button">删除本地文章</button>
+          <button id="closeModalButton" class="ghost-button tiny" type="button">关闭</button>
+        </div>
       </div>
       <p id="modalMeta" class="subtle"></p>
       <p id="modalSourceLinkWrap"></p>
       <section class="modal-section">
-        <h3>正文预览</h3>
-        <pre id="modalContentText" class="content-preview"></pre>
+        <h3>HTML 预览</h3>
+        <iframe id="modalContentFrame" class="content-preview-frame" sandbox=""></iframe>
+        <div id="modalContentEmpty" class="content-preview empty-state hidden">暂无正文内容。</div>
       </section>
       <section class="modal-section">
         <h3>评论区</h3>

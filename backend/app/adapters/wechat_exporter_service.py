@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter, BaseFetchAdapter
+from app.adapters.html_utils import extract_html_fragment
 from app.core.config import WECHAT_EXPORTER_API_KEY, WECHAT_EXPORTER_BASE_URL
 from app.core.exceptions import FetchRequestError, SearchRequestError
 from app.schemas.workflow import DiscoveryCandidate, FetchedArticle
@@ -183,7 +184,8 @@ class WechatExporterFetchAdapter(BaseFetchAdapter):
     def _fetch_article(self, candidate: DiscoveryCandidate) -> FetchedArticle:
         html = self.client.download_article(candidate.source_url, format_name="html")
         soup = BeautifulSoup(html, "html.parser")
-        text = soup.get_text("\n", strip=True)
+        text = self._extract_content_text(soup)
+        content_html = extract_html_fragment(soup, ("#js_content", ".rich_media_content", "article"))
         publish_time = self._extract_publish_time(soup)
         source_id = candidate.source_url.rstrip("/").split("/")[-1]
         return FetchedArticle(
@@ -198,8 +200,18 @@ class WechatExporterFetchAdapter(BaseFetchAdapter):
             read_count=0,
             comment_count=0,
             content_text=text,
+            content_html=content_html,
             source_id=source_id,
         )
+
+    def _extract_content_text(self, soup: BeautifulSoup) -> str:
+        for selector in ("#js_content", ".rich_media_content", "article"):
+            node = soup.select_one(selector)
+            if node is not None:
+                text = node.get_text("\n", strip=True)
+                if text:
+                    return text
+        return soup.get_text("\n", strip=True)
 
     def _extract_title(self, soup: BeautifulSoup) -> str | None:
         for selector in ("#activity-name", "h1", "title"):

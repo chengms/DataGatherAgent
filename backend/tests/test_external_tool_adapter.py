@@ -278,6 +278,7 @@ class ExternalToolAdapterTests(unittest.TestCase):
         self.assertEqual(article.platform, "xiaohongshu")
         self.assertEqual(article.read_count, 321)
         self.assertEqual(article.comment_count, 17)
+        self.assertTrue(article.content_html.startswith("<p>"))
 
     def test_weibo_adapter_parses_normalized_output(self) -> None:
         adapter = MediaCrawlerWeiboDiscoveryAdapter()

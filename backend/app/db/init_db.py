@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS fetched_article (
     read_count INTEGER NOT NULL,
     comment_count INTEGER NOT NULL,
     content_text TEXT NOT NULL,
+    content_html TEXT NOT NULL DEFAULT '',
     source_id TEXT NOT NULL,
     comments_json TEXT NOT NULL DEFAULT '[]',
     FOREIGN KEY(job_id) REFERENCES workflow_job(id)
@@ -90,6 +91,8 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE fetched_article ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article'")
         if "comments_json" not in fetched_columns:
             cursor.execute("ALTER TABLE fetched_article ADD COLUMN comments_json TEXT NOT NULL DEFAULT '[]'")
+        if "content_html" not in fetched_columns:
+            cursor.execute("ALTER TABLE fetched_article ADD COLUMN content_html TEXT NOT NULL DEFAULT ''")
         ranked_columns = {row[1] for row in cursor.execute("PRAGMA table_info(ranked_article)").fetchall()}
         if "platform" not in ranked_columns:
             cursor.execute("ALTER TABLE ranked_article ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
@@ -127,6 +130,35 @@ def init_db() -> None:
                     """,
                     (discovery_source, fetch_source, job_id),
                 )
+        mock_job_ids = [
+            row[0]
+            for row in cursor.execute(
+                """
+                SELECT DISTINCT id
+                FROM workflow_job
+                WHERE discovery_source LIKE '%mock_%'
+                   OR fetch_source LIKE '%mock_%'
+                UNION
+                SELECT DISTINCT job_id
+                FROM discovered_candidate
+                WHERE source_engine LIKE 'mock_%'
+                UNION
+                SELECT DISTINCT job_id
+                FROM fetched_article
+                WHERE source_engine LIKE 'mock_%'
+                UNION
+                SELECT DISTINCT job_id
+                FROM ranked_article
+                WHERE source_engine LIKE 'mock_%'
+                """
+            ).fetchall()
+        ]
+        if mock_job_ids:
+            placeholders = ",".join("?" for _ in mock_job_ids)
+            cursor.execute(f"DELETE FROM ranked_article WHERE job_id IN ({placeholders})", tuple(mock_job_ids))
+            cursor.execute(f"DELETE FROM fetched_article WHERE job_id IN ({placeholders})", tuple(mock_job_ids))
+            cursor.execute(f"DELETE FROM discovered_candidate WHERE job_id IN ({placeholders})", tuple(mock_job_ids))
+            cursor.execute(f"DELETE FROM workflow_job WHERE id IN ({placeholders})", tuple(mock_job_ids))
 
 
 _initialized = False

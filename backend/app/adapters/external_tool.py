@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.adapters.base import AdapterInfo, BaseDiscoveryAdapter, BaseFetchAdapter
+from app.adapters.html_utils import text_to_html_fragment
 from app.core.config import BASE_DIR, EXTERNAL_TOOLS_DIR
 from app.core.exceptions import FetchRequestError, SearchRequestError
 from app.schemas.workflow import ArticleComment, DiscoveryCandidate, FetchedArticle
@@ -139,6 +140,12 @@ class ExternalToolAdapterMixin:
         if "video" in source_url:
             return "video"
         return "article"
+
+    def _resolve_content_html(self, item: dict, fallback_text: str) -> str:
+        raw_html = item.get("content_html") or item.get("html") or item.get("body_html")
+        if isinstance(raw_html, str) and raw_html.strip():
+            return raw_html
+        return text_to_html_fragment(fallback_text)
 
 
 class ExternalDiscoveryAdapter(ExternalToolAdapterMixin, BaseDiscoveryAdapter):
@@ -327,6 +334,7 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
                 details={"adapter": self.info.name, "source_url": candidate.source_url},
             )
 
+        content_text = str(item.get("content_text") or candidate.snippet)
         return FetchedArticle(
             keyword=candidate.keyword,
             platform="xiaohongshu",
@@ -338,7 +346,8 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
             publish_time=datetime.fromisoformat(publish_time_raw.replace("Z", "+00:00")),
             read_count=int(item.get("read_count") or 0),
             comment_count=int(item.get("comment_count") or 0),
-            content_text=str(item.get("content_text") or candidate.snippet),
+            content_text=content_text,
+            content_html=self._resolve_content_html(item, content_text),
             source_id=str(item.get("source_id") or ""),
             comments=self._normalize_comments(item.get("comments")),
         )
@@ -457,6 +466,7 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
                 details={"adapter": self.info.name, "source_url": candidate.source_url},
             )
 
+        content_text = str(item.get("content_text") or candidate.snippet)
         return FetchedArticle(
             keyword=candidate.keyword,
             platform=self.platform_name,
@@ -468,7 +478,8 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
             publish_time=datetime.fromisoformat(publish_time_raw.replace("Z", "+00:00")),
             read_count=int(item.get("read_count") or 0),
             comment_count=int(item.get("comment_count") or 0),
-            content_text=str(item.get("content_text") or candidate.snippet),
+            content_text=content_text,
+            content_html=self._resolve_content_html(item, content_text),
             source_id=str(item.get("source_id") or ""),
             comments=self._normalize_comments(item.get("comments")),
         )

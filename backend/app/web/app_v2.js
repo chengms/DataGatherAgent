@@ -90,6 +90,7 @@ const state = {
     total: 0,
     items: [],
   },
+  activeModalArticleId: 0,
 };
 
 const elements = {
@@ -161,7 +162,9 @@ const elements = {
   modalTitle: document.getElementById("modalTitle"),
   modalMeta: document.getElementById("modalMeta"),
   modalSourceLinkWrap: document.getElementById("modalSourceLinkWrap"),
-  modalContentText: document.getElementById("modalContentText"),
+  modalContentFrame: document.getElementById("modalContentFrame"),
+  modalContentEmpty: document.getElementById("modalContentEmpty"),
+  deleteModalArticleButton: document.getElementById("deleteModalArticleButton"),
   modalComments: document.getElementById("modalComments"),
   wechatLoginModal: document.getElementById("wechatLoginModal"),
   closeWechatLoginButton: document.getElementById("closeWechatLoginButton"),
@@ -194,6 +197,104 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
   return escapeHtml(value);
+}
+
+function plainTextToHtml(text) {
+  const lines = String(text || "")
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return "";
+  }
+  return lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+}
+
+function sanitizeArticleHtml(rawHtml) {
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(`<div id="article-root">${String(rawHtml || "")}</div>`, "text/html");
+  documentNode.querySelectorAll("script, noscript, iframe, frame, object, embed, base, meta, link, form, input, button, textarea, select, option").forEach((node) => {
+    node.remove();
+  });
+  documentNode.querySelectorAll("*").forEach((node) => {
+    [...node.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value || "";
+      if (name.startsWith("on")) {
+        node.removeAttribute(attribute.name);
+        return;
+      }
+      if ((name === "href" || name === "src") && /^\s*javascript:/i.test(value)) {
+        node.removeAttribute(attribute.name);
+        return;
+      }
+      if (name === "target") {
+        node.setAttribute("target", "_blank");
+      }
+    });
+    if (node.tagName === "A") {
+      node.setAttribute("rel", "noreferrer noopener");
+    }
+  });
+  return documentNode.getElementById("article-root")?.innerHTML || "";
+}
+
+function buildArticlePreviewDocument(article) {
+  const rawHtml = String(article?.content_html || "").trim();
+  const bodyHtml = sanitizeArticleHtml(rawHtml) || plainTextToHtml(article?.content_text || "");
+  if (!bodyHtml) {
+    return "";
+  }
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #1f2430;
+      background: #ffffff;
+      line-height: 1.8;
+      word-break: break-word;
+    }
+    img, video { max-width: 100%; height: auto; border-radius: 12px; }
+    a { color: #0f766e; }
+    p { margin: 0 0 1em; }
+    blockquote {
+      margin: 1em 0;
+      padding: 0.75em 1em;
+      border-left: 4px solid rgba(15, 118, 110, 0.28);
+      background: rgba(15, 118, 110, 0.06);
+      border-radius: 12px;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #f8fafc;
+      padding: 12px 14px;
+      border-radius: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>${bodyHtml}</body>
+</html>`;
+}
+
+function renderArticlePreview(article) {
+  const previewDoc = buildArticlePreviewDocument(article);
+  const hasPreview = Boolean(previewDoc);
+  elements.modalContentFrame.classList.toggle("hidden", !hasPreview);
+  elements.modalContentEmpty.classList.toggle("hidden", hasPreview);
+  if (hasPreview) {
+    elements.modalContentFrame.srcdoc = previewDoc;
+  } else {
+    elements.modalContentFrame.removeAttribute("srcdoc");
+    elements.modalContentEmpty.textContent = "暂无正文内容。";
+  }
 }
 
 function localizePlatform(platform) {
@@ -1279,8 +1380,8 @@ function renderLocalSearch() {
     ? `第 ${page} / ${totalPages} 页，共 ${total} 条`
     : "未命中结果";
   elements.localMeta.textContent = state.catalogTotal
-    ? `本地库累计 ${state.catalogTotal} 条内容，支持全文检索、原文跳转和评论预览。`
-    : "本地库暂无数据，运行任务后可在这里检索正文与评论。";
+    ? `本地库累计 ${state.catalogTotal} 条内容，支持全文检索、HTML 预览、原文跳转和本地删除。`
+    : "本地库暂无数据，运行任务后可在这里检索正文、HTML 预览并管理本地文章。";
 
   if (!state.articleSearch.items.length) {
     elements.localArticles.className = "article-list empty-state";
@@ -1307,24 +1408,34 @@ function renderLocalSearch() {
         <span>关键词 ${escapeHtml(article.keyword || "-")}</span>
         <span>发布时间 ${escapeHtml(formatDateTime(article.publish_time))}</span>
         <span>阅读 ${Number(article.read_count || 0)} · 评论 ${Number(article.comment_count || 0)}</span>
-      </div>
-      <div class="card-actions">
-        <a href="${escapeAttribute(article.source_url || "#")}" target="_blank" rel="noreferrer">打开原文</a>
-        <button type="button" class="link-button" data-open-article-id="${article.id}">本地预览（含评论）</button>
-      </div>
-    </article>
-  `).join("");
+        </div>
+        <div class="card-actions">
+          <a href="${escapeAttribute(article.source_url || "#")}" target="_blank" rel="noreferrer">打开原文</a>
+          <button type="button" class="link-button" data-open-article-id="${article.id}">本地预览（含评论）</button>
+          <button type="button" class="link-button danger-button" data-delete-article-id="${article.id}" data-delete-article-title="${escapeAttribute(article.title || "")}">删除</button>
+        </div>
+      </article>
+    `).join("");
 
   elements.localArticles.querySelectorAll("button[data-open-article-id]").forEach((button) => {
     button.addEventListener("click", async () => {
       const articleId = Number(button.getAttribute("data-open-article-id") || "0");
-      if (articleId) {
-        await openArticleModal(articleId);
-      }
+        if (articleId) {
+          await openArticleModal(articleId);
+        }
+      });
     });
-  });
-  renderHeroSummary();
-}
+    elements.localArticles.querySelectorAll("button[data-delete-article-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const articleId = Number(button.getAttribute("data-delete-article-id") || "0");
+        const articleTitle = button.getAttribute("data-delete-article-title") || "该文章";
+        if (articleId) {
+          await deleteLocalArticle(articleId, articleTitle);
+        }
+      });
+    });
+    renderHeroSummary();
+  }
 
 function renderWorkspace() {
   renderHotWorkspace();
@@ -1339,6 +1450,9 @@ function showModal() {
 }
 
 function hideModal() {
+  state.activeModalArticleId = 0;
+  elements.deleteModalArticleButton.disabled = true;
+  elements.modalContentFrame.removeAttribute("srcdoc");
   elements.articleModal.classList.add("hidden");
   elements.articleModal.setAttribute("aria-hidden", "true");
 }
@@ -1621,6 +1735,8 @@ async function openPlatformLoginModal(platformKey) {
 
 async function openArticleModal(articleId) {
   const payload = await requestJson(`/api/workflows/articles/${articleId}`);
+  state.activeModalArticleId = Number(payload.id || articleId || 0);
+  elements.deleteModalArticleButton.disabled = !state.activeModalArticleId;
   elements.modalTitle.textContent = payload.title || "本地预览";
   elements.modalMeta.textContent = [
     localizePlatform(payload.platform || ""),
@@ -1632,7 +1748,7 @@ async function openArticleModal(articleId) {
     `评论 ${Number(payload.comment_count || 0)}`,
   ].join(" · ");
   elements.modalSourceLinkWrap.innerHTML = `<a href="${escapeAttribute(payload.source_url || "#")}" target="_blank" rel="noreferrer">打开原文链接</a>`;
-  elements.modalContentText.textContent = payload.content_text || "";
+  renderArticlePreview(payload);
 
   const comments = Array.isArray(payload.comments) ? payload.comments : [];
   if (!comments.length) {
@@ -1652,6 +1768,23 @@ async function openArticleModal(articleId) {
     `).join("");
   }
   showModal();
+}
+
+async function deleteLocalArticle(articleId, articleTitle = "该文章") {
+  const confirmed = window.confirm(`确认删除本地文章《${articleTitle}》吗？此操作只影响本地资料库。`);
+  if (!confirmed) {
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/workflows/articles/${articleId}`, { method: "DELETE" });
+    if (state.activeModalArticleId === articleId) {
+      hideModal();
+    }
+    await Promise.allSettled([loadLocalArticles(), loadJobs()]);
+    setStatus(`已删除本地文章《${payload.title || articleTitle}》。`, "success");
+  } catch (error) {
+    setStatus(error.message || "删除本地文章失败。", "error");
+  }
 }
 
 async function openLocalPreviewBySource(article) {
@@ -1739,6 +1872,10 @@ async function loadLocalArticles() {
   const payload = await requestJson(`/api/workflows/articles?${params.toString()}`);
   state.articleSearch.total = Number(payload.total || 0);
   state.articleSearch.items = Array.isArray(payload.items) ? payload.items : [];
+  if (!state.articleSearch.items.length && state.articleSearch.total > 0 && state.articleSearch.page > 1) {
+    state.articleSearch.page -= 1;
+    return loadLocalArticles();
+  }
   if (isCatalogBaselineQuery()) {
     state.catalogTotal = state.articleSearch.total;
   }
@@ -1886,6 +2023,12 @@ function bindEvents() {
   elements.localPrevButton.addEventListener("click", onPrevLocalPage);
   elements.localNextButton.addEventListener("click", onNextLocalPage);
   elements.closeModalButton.addEventListener("click", hideModal);
+  elements.deleteModalArticleButton.addEventListener("click", async () => {
+    if (!state.activeModalArticleId) {
+      return;
+    }
+    await deleteLocalArticle(state.activeModalArticleId, elements.modalTitle.textContent || "该文章");
+  });
   elements.articleModal.querySelectorAll("[data-close-modal]").forEach((node) => {
     node.addEventListener("click", hideModal);
   });
@@ -1909,6 +2052,7 @@ function bindEvents() {
 }
 
 async function bootstrap() {
+  elements.deleteModalArticleButton.disabled = true;
   bindEvents();
   setActivePageTab(state.activePageTab);
   renderPlatformSelector();

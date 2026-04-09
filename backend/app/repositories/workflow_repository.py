@@ -121,8 +121,8 @@ class WorkflowRepository:
                 """
                 INSERT INTO fetched_article (
                     job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name, publish_time,
-                    read_count, comment_count, content_text, source_id, comments_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    read_count, comment_count, content_text, content_html, source_id, comments_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -138,6 +138,7 @@ class WorkflowRepository:
                         item.read_count,
                         item.comment_count,
                         item.content_text,
+                        item.content_html,
                         item.source_id,
                         self._dump_comments_json(item),
                     )
@@ -242,7 +243,7 @@ class WorkflowRepository:
             rows = cursor.execute(
                 f"""
                 SELECT id, job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name,
-                       publish_time, read_count, comment_count, content_text, source_id, comments_json
+                       publish_time, read_count, comment_count, content_text, content_html, source_id, comments_json
                 FROM fetched_article
                 {where_sql}
                 ORDER BY id DESC
@@ -260,7 +261,7 @@ class WorkflowRepository:
             row = cursor.execute(
                 """
                 SELECT id, job_id, keyword, platform, source_engine, content_kind, title, source_url, account_name,
-                       publish_time, read_count, comment_count, content_text, source_id, comments_json
+                       publish_time, read_count, comment_count, content_text, content_html, source_id, comments_json
                 FROM fetched_article
                 WHERE id = ?
                 """,
@@ -270,6 +271,45 @@ class WorkflowRepository:
             return None
         item = dict(row)
         item["comments"] = self._load_comments_json(item.pop("comments_json", "[]"))
+        return item
+
+    def delete_fetched_article(self, article_id: int) -> dict | None:
+        with db_cursor() as (_, cursor):
+            row = cursor.execute(
+                """
+                SELECT id, job_id, title, source_url
+                FROM fetched_article
+                WHERE id = ?
+                """,
+                (article_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            item = dict(row)
+            cursor.execute("DELETE FROM fetched_article WHERE id = ?", (article_id,))
+            cursor.execute(
+                """
+                DELETE FROM ranked_article
+                WHERE job_id = ? AND source_url = ?
+                """,
+                (item["job_id"], item["source_url"]),
+            )
+            fetched_count = cursor.execute(
+                "SELECT COUNT(1) AS c FROM fetched_article WHERE job_id = ?",
+                (item["job_id"],),
+            ).fetchone()["c"]
+            ranked_count = cursor.execute(
+                "SELECT COUNT(1) AS c FROM ranked_article WHERE job_id = ?",
+                (item["job_id"],),
+            ).fetchone()["c"]
+            cursor.execute(
+                """
+                UPDATE workflow_job
+                SET fetched_count = ?, ranked_count = ?
+                WHERE id = ?
+                """,
+                (fetched_count, ranked_count, item["job_id"]),
+            )
         return item
 
 
