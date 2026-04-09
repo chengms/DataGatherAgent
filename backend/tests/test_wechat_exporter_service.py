@@ -1,6 +1,7 @@
 import unittest
 from datetime import UTC, datetime
 
+from app.core.exceptions import SearchRequestError
 from app.adapters.wechat_exporter_service import (
     WechatExporterFetchAdapter,
     WechatExporterSearchAdapter,
@@ -40,6 +41,23 @@ class FakeWechatExporterClient(WechatExporterServiceClient):
 
 
 class WechatExporterServiceTests(unittest.TestCase):
+    def test_service_client_extracts_articles_list_from_dict_payload(self) -> None:
+        client = WechatExporterServiceClient(base_url="https://example.com", api_key="token")
+        payload = {
+            "base_resp": {"ret": 0, "err_msg": "ok"},
+            "articles": [{"title": "AI Weekly", "link": "https://mp.weixin.qq.com/s/demo-1"}],
+        }
+        items = client._extract_items(payload)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["title"], "AI Weekly")
+
+    def test_service_client_raises_clear_error_for_nonzero_base_resp(self) -> None:
+        client = WechatExporterServiceClient(base_url="https://example.com", api_key="token")
+        with self.assertRaises(SearchRequestError) as context:
+            client._extract_items({"base_resp": {"ret": -1, "err_msg": "invalid token"}})
+        self.assertEqual(context.exception.details["ret"], -1)
+        self.assertEqual(context.exception.details["err_msg"], "invalid token")
+
     def test_search_adapter_builds_candidates_from_service(self) -> None:
         adapter = WechatExporterSearchAdapter(client=FakeWechatExporterClient())
         items = adapter.discover(keyword="AI", limit=1)

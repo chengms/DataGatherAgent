@@ -90,13 +90,26 @@ class WechatExporterServiceClient:
         if isinstance(payload, list):
             return [item for item in payload if isinstance(item, dict)]
         if isinstance(payload, dict):
-            for key in ("data", "items", "list", "records"):
+            base_resp = payload.get("base_resp")
+            if isinstance(base_resp, dict) and int(base_resp.get("ret", 0) or 0) != 0:
+                raise SearchRequestError(
+                    "wechat exporter request returned an error",
+                    details={
+                        "ret": base_resp.get("ret"),
+                        "err_msg": base_resp.get("err_msg"),
+                        "payload_keys": list(payload.keys())[:20],
+                    },
+                )
+            for key in ("data", "items", "list", "records", "articles"):
                 value = payload.get(key)
                 if isinstance(value, list):
                     return [item for item in value if isinstance(item, dict)]
         raise SearchRequestError(
             "wechat exporter response schema is not recognized",
-            details={"response_type": type(payload).__name__},
+            details={
+                "response_type": type(payload).__name__,
+                "payload_keys": list(payload.keys())[:20] if isinstance(payload, dict) else None,
+            },
         )
 
 
