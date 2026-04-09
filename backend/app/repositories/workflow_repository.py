@@ -81,6 +81,17 @@ class WorkflowRepository:
                 (status, finished_at, discovered_count, fetched_count, ranked_count, job_id),
             )
 
+    def update_job_sources(self, job_id: int, discovery_source: str, fetch_source: str) -> None:
+        with db_cursor() as (_, cursor):
+            cursor.execute(
+                """
+                UPDATE workflow_job
+                SET discovery_source = ?, fetch_source = ?
+                WHERE id = ?
+                """,
+                (discovery_source, fetch_source, job_id),
+            )
+
     def save_discovery_candidates(self, job_id: int, candidates: list[DiscoveryCandidate]) -> None:
         with db_cursor() as (_, cursor):
             cursor.executemany(

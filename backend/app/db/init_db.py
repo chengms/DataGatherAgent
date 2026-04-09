@@ -97,6 +97,36 @@ def init_db() -> None:
             cursor.execute("ALTER TABLE ranked_article ADD COLUMN source_engine TEXT NOT NULL DEFAULT ''")
         if "content_kind" not in ranked_columns:
             cursor.execute("ALTER TABLE ranked_article ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'article'")
+        job_ids = [row[0] for row in cursor.execute("SELECT id FROM workflow_job").fetchall()]
+        for job_id in job_ids:
+            discovery_row = cursor.execute(
+                """
+                SELECT GROUP_CONCAT(DISTINCT source_engine)
+                FROM discovered_candidate
+                WHERE job_id = ? AND source_engine <> ''
+                """,
+                (job_id,),
+            ).fetchone()
+            fetch_row = cursor.execute(
+                """
+                SELECT GROUP_CONCAT(DISTINCT source_engine)
+                FROM fetched_article
+                WHERE job_id = ? AND source_engine <> ''
+                """,
+                (job_id,),
+            ).fetchone()
+            discovery_source = discovery_row[0] if discovery_row and discovery_row[0] else None
+            fetch_source = fetch_row[0] if fetch_row and fetch_row[0] else None
+            if discovery_source or fetch_source:
+                cursor.execute(
+                    """
+                    UPDATE workflow_job
+                    SET discovery_source = COALESCE(?, discovery_source),
+                        fetch_source = COALESCE(?, fetch_source)
+                    WHERE id = ?
+                    """,
+                    (discovery_source, fetch_source, job_id),
+                )
 
 
 _initialized = False

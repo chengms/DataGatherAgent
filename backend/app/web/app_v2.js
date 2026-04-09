@@ -939,6 +939,14 @@ function normalizePreviewPayload(payload, source = "preview") {
   };
 }
 
+function previewContainsMockData(preview) {
+  const hotArticles = Array.isArray(preview?.hot_articles) ? preview.hot_articles : [];
+  const fetchedArticles = Array.isArray(preview?.fetched_articles) ? preview.fetched_articles : [];
+  const discoveryCandidates = Array.isArray(preview?.discovery_candidates) ? preview.discovery_candidates : [];
+  return [...hotArticles, ...fetchedArticles, ...discoveryCandidates].some((item) =>
+    String(item?.source_engine || "").startsWith("mock_"));
+}
+
 function renderHotFilterOptions() {
   const selectedPlatform = state.previewFilters.platform;
   const selectedKind = state.previewFilters.kind;
@@ -1238,6 +1246,11 @@ function renderJobs() {
       elements.fetchedKeywordFilter.value = "";
       setActiveWorkspaceTab("hot");
       renderWorkspace();
+      if (previewContainsMockData(state.lastPreview)) {
+        setStatus(`已加载任务 #${jobId}，该任务包含 Mock 回退结果，并非真实采集数据。`, "warning");
+      } else {
+        setStatus(`已加载任务 #${jobId}。`, "success");
+      }
     });
   });
   renderHeroSummary();
@@ -1776,7 +1789,11 @@ async function runPreview(event) {
     setActiveWorkspaceTab("hot");
     renderWorkspace();
     await Promise.allSettled([loadJobs(), loadLocalArticles()]);
-    setStatus(`预览完成，任务 #${state.lastPreview.job_id}。`, "success");
+    if (previewContainsMockData(state.lastPreview)) {
+      setStatus(`预览完成，任务 #${state.lastPreview.job_id}，但当前结果包含 Mock 回退数据。`, "warning");
+    } else {
+      setStatus(`预览完成，任务 #${state.lastPreview.job_id}。`, "success");
+    }
   } catch (error) {
     setStatus(error.message || "预览失败", "error");
   } finally {

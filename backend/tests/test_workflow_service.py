@@ -9,6 +9,10 @@ from app.services.workflow import WorkflowService
 
 
 class WorkflowServiceTests(unittest.TestCase):
+    def test_preview_request_defaults_to_no_mock_fallback(self) -> None:
+        request_payload = WorkflowPreviewRequest(keywords=["AI Agent"])
+        self.assertFalse(request_payload.fallback_to_mock)
+
     def test_multi_platform_preview_aggregates_candidates(self) -> None:
         request_payload = WorkflowPreviewRequest(
             keywords=["AI Agent"],
@@ -89,6 +93,11 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(response.discovered_count, 2)
         self.assertEqual(response.fetched_count, 2)
         self.assertEqual(response.ranked_count, 2)
+        workflow_repository.update_job_sources.assert_called_once_with(
+            job_id=100,
+            discovery_source="wechat_exporter_search,xiaohongshu_external_search",
+            fetch_source="wechat_exporter_fetch,xiaohongshu_external_fetch",
+        )
 
     def test_live_adapter_failures_fall_back_to_mock_sources(self) -> None:
         request_payload = WorkflowPreviewRequest(
@@ -155,6 +164,11 @@ class WorkflowServiceTests(unittest.TestCase):
         self.assertEqual(response.ranked_count, 1)
         mock_discovery.discover.assert_called_once_with(keyword="AI Agent", limit=2)
         mock_fetch.fetch_article.assert_called_once()
+        workflow_repository.update_job_sources.assert_called_once_with(
+            job_id=99,
+            discovery_source="mock_wechat_search",
+            fetch_source="mock_wechat_fetch",
+        )
         workflow_repository.complete_job.assert_called_once()
 
     def test_xiaohongshu_failures_do_not_fall_back_to_wechat_mock(self) -> None:

@@ -71,8 +71,10 @@ class WorkflowService:
         discovery_candidates = []
         fetched_articles = []
         hot_articles = []
+        used_discovery_sources: set[str] = set()
+        used_fetch_sources: set[str] = set()
         try:
-            fetch_plan: list[tuple[str, object]] = []
+            fetch_plan: list[tuple[str, object, str, object]] = []
             for platform in self._resolve_platforms(payload):
                 discovery_source, fetch_source = self._resolve_sources_for_platform(payload, platform)
                 discovery_adapter = adapter_registry.get_discovery(discovery_source)
@@ -89,20 +91,27 @@ class WorkflowService:
                             keyword=keyword,
                             limit=payload.limit,
                         )
-                        fetch_adapter = adapter_registry.get_fetch(self._fallback_fetch_source(platform) or fetch_source)
+                        fetch_source = self._fallback_fetch_source(platform) or fetch_source
+                        fetch_adapter = adapter_registry.get_fetch(fetch_source)
+                    if candidates:
+                        used_discovery_sources.update(str(item.source_engine or discovery_source) for item in candidates)
+                    else:
+                        used_discovery_sources.add(discovery_source)
                     discovery_candidates.extend(candidates)
-                    fetch_plan.extend((platform, fetch_adapter, candidate) for candidate in candidates)
+                    fetch_plan.extend((platform, fetch_adapter, fetch_source, candidate) for candidate in candidates)
             workflow_repository.save_discovery_candidates(job_id, discovery_candidates)
 
-            for platform, fetch_adapter, candidate in fetch_plan:
+            for platform, fetch_adapter, fetch_source_name, candidate in fetch_plan:
                 try:
                     article = fetch_adapter.fetch_article(candidate)
                 except FetchRequestError:
                     fallback_source = self._fallback_fetch_source(platform)
                     if not payload.fallback_to_mock or fallback_source is None:
                         raise
+                    fetch_source_name = fallback_source
                     article = adapter_registry.get_fetch(fallback_source).fetch_article(candidate)
                 fetched_articles.append(article)
+                used_fetch_sources.add(str(article.source_engine or fetch_source_name))
             workflow_repository.save_fetched_articles(job_id, fetched_articles)
 
             ranked_articles = [
@@ -112,6 +121,11 @@ class WorkflowService:
             ranked_articles.sort(key=lambda item: item.total_score, reverse=True)
             hot_articles = ranked_articles[: payload.top_k]
             workflow_repository.save_ranked_articles(job_id, hot_articles)
+            workflow_repository.update_job_sources(
+                job_id=job_id,
+                discovery_source=",".join(sorted(used_discovery_sources)) or payload.discovery_source or "auto",
+                fetch_source=",".join(sorted(used_fetch_sources)) or payload.fetch_source or "auto",
+            )
             workflow_repository.complete_job(
                 job_id=job_id,
                 discovered_count=len(discovery_candidates),

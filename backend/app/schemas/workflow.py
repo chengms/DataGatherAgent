@@ -17,7 +17,7 @@ class WorkflowPreviewRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
     top_k: int = Field(default=10, ge=1, le=50)
     time_window_days: int = Field(default=7, ge=1, le=30)
-    fallback_to_mock: bool = True
+    fallback_to_mock: bool = False
     ranking: RankingWeights = Field(default_factory=RankingWeights)
 
     def selected_platforms(self) -> list[str]:
