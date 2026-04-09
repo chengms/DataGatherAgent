@@ -201,3 +201,19 @@ class PlatformLoginSessionResponse(BaseModel):
     message: str
     qrcode_data_url: str | None = None
     auth_key_prefix: str | None = None
+
+
+class ServiceActionRequest(BaseModel):
+    action: str
+
+
+class ServiceActionResponse(BaseModel):
+    task_id: str
+    service_name: str
+    action: str
+    status: str
+    progress: int = 0
+    message: str
+    service_online: bool = False
+    service_status: str = "unknown"
+    error: str | None = None

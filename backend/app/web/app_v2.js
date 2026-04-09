@@ -48,6 +48,7 @@ const state = {
   jobs: [],
   catalogTotal: 0,
   backendHealthy: null,
+  serviceActions: {},
   updateNotices: [],
   updateCheckedAt: "",
   wechatLogin: {
@@ -258,6 +259,63 @@ function getPlatformLoginButtonLabel(platformKey, capability) {
   return `${localizePlatform(platformKey)}扫码登录`;
 }
 
+function localizeServiceAction(action) {
+  const mapping = {
+    start: "启动",
+    stop: "停止",
+    restart: "重启",
+  };
+  return mapping[action] || action || "执行";
+}
+
+function getServiceActionState(serviceName) {
+  if (!serviceName) {
+    return null;
+  }
+  return state.serviceActions[serviceName] || null;
+}
+
+function isServiceActionBusy(serviceName) {
+  const task = getServiceActionState(serviceName);
+  return Boolean(task && (task.status === "queued" || task.status === "running"));
+}
+
+function getPrimaryServiceAction(capability) {
+  return capability?.serviceOnline ? "restart" : "start";
+}
+
+function getPrimaryServiceActionLabel(capability) {
+  return capability?.serviceOnline ? "重启服务" : "启动服务";
+}
+
+function renderServiceProgress(serviceName) {
+  const task = getServiceActionState(serviceName);
+  if (!task) {
+    return "";
+  }
+  const tone = task.status === "failed" ? "danger" : task.status === "success" ? "success" : "active";
+  const width = Math.max(6, Math.min(Number(task.progress || 0), 100));
+  const phaseLabel = task.status === "success"
+    ? `${localizeServiceAction(task.action)}完成`
+    : task.status === "failed"
+      ? `${localizeServiceAction(task.action)}失败`
+      : `${localizeServiceAction(task.action)}中`;
+  const errorLine = task.status === "failed" && task.error
+    ? `<p class="service-progress-detail">${escapeHtml(summarizeText(task.error, 180))}</p>`
+    : "";
+  return `
+    <div class="service-progress ${tone}">
+      <div class="service-progress-head">
+        <strong>${escapeHtml(phaseLabel)}</strong>
+        <span>${Math.min(Number(task.progress || 0), 100)}%</span>
+      </div>
+      <div class="service-progress-track"><span style="width:${width}%"></span></div>
+      <p class="service-progress-detail">${escapeHtml(task.message || "正在执行服务操作...")}</p>
+      ${errorLine}
+    </div>
+  `;
+}
+
 function renderPlatformLoginSteps(platformKey) {
   const config = getPlatformLoginConfig(platformKey);
   if (!config) {
@@ -394,6 +452,128 @@ async function requestJson(path, options = {}) {
   return response.json();
 }
 
+function upsertServiceAction(serviceName, payload) {
+  if (!serviceName) {
+    return;
+  }
+  const previous = state.serviceActions[serviceName] || {};
+  state.serviceActions[serviceName] = {
+    ...previous,
+    ...payload,
+    pollTimer: previous.pollTimer || 0,
+  };
+}
+
+function clearServiceActionPoll(serviceName) {
+  const task = getServiceActionState(serviceName);
+  if (!task?.pollTimer) {
+    return;
+  }
+  window.clearTimeout(task.pollTimer);
+  state.serviceActions[serviceName] = {
+    ...task,
+    pollTimer: 0,
+  };
+}
+
+function scheduleServiceActionPoll(serviceName) {
+  clearServiceActionPoll(serviceName);
+  const task = getServiceActionState(serviceName);
+  if (!task?.task_id) {
+    return;
+  }
+  const timer = window.setTimeout(() => {
+    pollServiceAction(serviceName);
+  }, 1200);
+  state.serviceActions[serviceName] = {
+    ...task,
+    pollTimer: timer,
+  };
+}
+
+async function pollServiceAction(serviceName) {
+  const task = getServiceActionState(serviceName);
+  if (!task?.task_id) {
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/discovery/service-actions/${encodeURIComponent(task.task_id)}`);
+    upsertServiceAction(serviceName, payload);
+    renderSourceCards();
+    renderLoginSettings();
+    if (payload.status === "queued" || payload.status === "running") {
+      scheduleServiceActionPoll(serviceName);
+      return;
+    }
+    clearServiceActionPoll(serviceName);
+    await Promise.allSettled([loadSources(true), loadHealth()]);
+    if (payload.status === "success") {
+      const serviceLabel = localizeServiceName(serviceName);
+      setStatus(`${serviceLabel}${payload.action === "stop" ? "已停止" : "已就绪"}。`, "success");
+      return;
+    }
+    setStatus(payload.message || `${localizeServiceName(serviceName)}操作失败。`, "error");
+  } catch (error) {
+    upsertServiceAction(serviceName, {
+      status: "failed",
+      progress: 100,
+      message: error.message || "服务动作轮询失败。",
+      error: error.message || "服务动作轮询失败。",
+    });
+    renderSourceCards();
+    renderLoginSettings();
+    setStatus(error.message || "服务动作轮询失败。", "error");
+  }
+}
+
+async function startServiceAction(serviceName, action) {
+  if (!serviceName || !action) {
+    return;
+  }
+  if (isServiceActionBusy(serviceName)) {
+    return;
+  }
+  upsertServiceAction(serviceName, {
+    task_id: "",
+    action,
+    status: "queued",
+    progress: 0,
+    message: `${localizeServiceAction(action)}请求已提交...`,
+    service_online: false,
+    service_status: "queued",
+    error: "",
+  });
+  renderSourceCards();
+  renderLoginSettings();
+  setStatus(`正在${localizeServiceAction(action)}${localizeServiceName(serviceName)}...`);
+  try {
+    const payload = await requestJson(`/api/discovery/services/${encodeURIComponent(serviceName)}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    upsertServiceAction(serviceName, payload);
+    renderSourceCards();
+    renderLoginSettings();
+    if (payload.status === "queued" || payload.status === "running") {
+      scheduleServiceActionPoll(serviceName);
+      return;
+    }
+    await Promise.allSettled([loadSources(true), loadHealth()]);
+  } catch (error) {
+    upsertServiceAction(serviceName, {
+      action,
+      status: "failed",
+      progress: 100,
+      message: error.message || `${localizeServiceAction(action)}失败。`,
+      error: error.message || `${localizeServiceAction(action)}失败。`,
+    });
+    renderSourceCards();
+    renderLoginSettings();
+    setStatus(error.message || `${localizeServiceAction(action)}失败。`, "error");
+  }
+}
+
 function safeParseKeywords(raw) {
   try {
     const payload = JSON.parse(raw);
@@ -505,6 +685,10 @@ function renderSourceCards() {
     const meta = getPlatformStateMeta(platform, capability);
     const ready = Boolean(capability?.runtimeReady && platform.supported);
     const live = Boolean(capability?.live && capability?.runtimeReady);
+    const serviceName = capability?.serviceName || "";
+    const busy = isServiceActionBusy(serviceName);
+    const primaryAction = getPrimaryServiceAction(capability);
+    const canControl = Boolean(platform.supported && serviceName);
     return `
       <article class="source-card${platform.supported ? "" : " disabled"}">
         <div class="source-top">
@@ -542,9 +726,37 @@ function renderSourceCards() {
             <dd>${capability?.lastCheckedAt ? formatDateTime(capability.lastCheckedAt) : "-"}</dd>
           </div>
         </dl>
+        <div class="card-actions">
+          <button
+            type="button"
+            class="link-button"
+            data-service-action="${escapeAttribute(serviceName)}"
+            data-service-op="${escapeAttribute(primaryAction)}"
+            ${canControl && !busy ? "" : "disabled"}
+          >${busy ? `${localizeServiceAction(getServiceActionState(serviceName)?.action)}中...` : getPrimaryServiceActionLabel(capability)}</button>
+          <button
+            type="button"
+            class="link-button"
+            data-service-action="${escapeAttribute(serviceName)}"
+            data-service-op="stop"
+            ${capability?.serviceOnline && !busy ? "" : "disabled"}
+          >停止服务</button>
+        </div>
+        ${renderServiceProgress(serviceName)}
       </article>
     `;
   }).join("");
+
+  elements.sourcesGrid.querySelectorAll("button[data-service-action]").forEach((button) => {
+    const serviceName = button.getAttribute("data-service-action");
+    const action = button.getAttribute("data-service-op");
+    button.addEventListener("click", () => {
+      if (!serviceName || !action) {
+        return;
+      }
+      startServiceAction(serviceName, action);
+    });
+  });
 }
 
 function renderLoginSettings() {
@@ -554,7 +766,10 @@ function renderLoginSettings() {
     const capability = capabilityMap.get(platform.key);
     const meta = getPlatformStateMeta(platform, capability);
     const actionLabel = getPlatformLoginButtonLabel(platform.key, capability);
-    const canOpen = Boolean(capability?.serviceOnline);
+    const serviceName = capability?.serviceName || "";
+    const busy = isServiceActionBusy(serviceName);
+    const canOpen = Boolean(capability?.serviceOnline && !busy);
+    const primaryAction = getPrimaryServiceAction(capability);
     const actionHint = platform.key === "wechat"
       ? "二维码会通过公众号服务生成并显示在当前页面。"
       : "二维码会通过无头登录会话生成并显示在当前页面。";
@@ -579,13 +794,39 @@ function renderLoginSettings() {
           <button
             type="button"
             class="link-button"
+            data-service-action="${escapeAttribute(serviceName)}"
+            data-service-op="${escapeAttribute(primaryAction)}"
+            ${serviceName && !busy ? "" : "disabled"}
+          >${busy ? `${localizeServiceAction(getServiceActionState(serviceName)?.action)}中...` : getPrimaryServiceActionLabel(capability)}</button>
+          <button
+            type="button"
+            class="link-button"
+            data-service-action="${escapeAttribute(serviceName)}"
+            data-service-op="stop"
+            ${capability?.serviceOnline && !busy ? "" : "disabled"}
+          >停止服务</button>
+          <button
+            type="button"
+            class="link-button"
             data-open-login="${platform.key}"
             ${canOpen ? "" : "disabled"}
           >${actionLabel}</button>
         </div>
+        ${renderServiceProgress(serviceName)}
       </article>
     `;
   }).join("");
+
+  elements.loginSettingsGrid.querySelectorAll("button[data-service-action]").forEach((button) => {
+    const serviceName = button.getAttribute("data-service-action");
+    const action = button.getAttribute("data-service-op");
+    button.addEventListener("click", () => {
+      if (!serviceName || !action) {
+        return;
+      }
+      startServiceAction(serviceName, action);
+    });
+  });
 
   elements.loginSettingsGrid.querySelectorAll("button[data-open-login]").forEach((button) => {
     const platformKey = button.getAttribute("data-open-login");
@@ -1664,6 +1905,10 @@ async function bootstrap() {
   await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices()]);
   await loadLocalArticles();
   renderWorkspace();
+  window.setInterval(() => {
+    loadHealth();
+    loadSources();
+  }, 15000);
   window.setInterval(() => {
     loadUpdateNotices();
   }, 60000);

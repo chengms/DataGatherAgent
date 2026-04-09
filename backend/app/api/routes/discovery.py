@@ -4,11 +4,14 @@ from fastapi.responses import Response
 from app.core.exceptions import NotFoundError
 from app.schemas.workflow import (
     PlatformLoginSessionResponse,
+    ServiceActionRequest,
+    ServiceActionResponse,
     SourceInfoResponse,
     UpdateNoticeResponse,
     WechatLoginSessionResponse,
 )
 from app.services.platform_login import platform_login_service
+from app.services.service_control import get_service_action, start_service_action
 from app.services.platform_status import list_platform_status
 from app.services.registry import adapter_registry
 from app.services.update_notices import list_update_notices
@@ -87,3 +90,15 @@ def delete_platform_login_session(platform: str, session_id: str) -> dict[str, b
         raise NotFoundError("Platform login session not found", "PlatformLoginSession")
     platform_login_service.discard_session(session_id)
     return {"ok": True}
+
+
+@router.post("/services/{service_name}/actions", response_model=ServiceActionResponse)
+def create_service_action(service_name: str, payload: ServiceActionRequest) -> ServiceActionResponse:
+    task = start_service_action(service_name, payload.action)
+    return ServiceActionResponse.model_validate(task)
+
+
+@router.get("/service-actions/{task_id}", response_model=ServiceActionResponse)
+def poll_service_action(task_id: str) -> ServiceActionResponse:
+    task = get_service_action(task_id)
+    return ServiceActionResponse.model_validate(task)

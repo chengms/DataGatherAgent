@@ -654,6 +654,60 @@ textarea {
   margin-top: 6px;
 }
 
+.service-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 118, 110, 0.06);
+  border: 1px solid rgba(15, 118, 110, 0.12);
+}
+
+.service-progress.success {
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.service-progress.danger {
+  background: rgba(194, 65, 12, 0.08);
+  border-color: rgba(194, 65, 12, 0.14);
+}
+
+.service-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.service-progress-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(31, 36, 48, 0.08);
+}
+
+.service-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #155e75);
+  transition: width 220ms ease;
+}
+
+.service-progress.danger .service-progress-track span {
+  background: linear-gradient(90deg, var(--danger), #ea580c);
+}
+
+.service-progress-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .article-card a,
 .job-card button {
   color: var(--accent);

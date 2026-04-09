@@ -28,8 +28,25 @@ RUNTIME_DIR = ROOT_DIR / ".runtime"
 UPDATE_STATUS_PATH = RUNTIME_DIR / "service_updates.json"
 
 
+def _write_console_line(message: str) -> None:
+    line = f"{message}\n"
+    try:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        data = line.encode(encoding, errors="replace")
+        buffer = getattr(sys.stdout, "buffer", None)
+        if buffer is not None:
+            buffer.write(data)
+            buffer.flush()
+            return
+        sys.stdout.write(data.decode(encoding, errors="replace"))
+        sys.stdout.flush()
+
+
 def log(message: str) -> None:
-    print(f"[services] {message}", flush=True)
+    _write_console_line(f"[services] {message}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -358,7 +375,7 @@ def stream_output(pipe, prefix: str) -> None:
                 break
             if not line:
                 break
-            print(f"[{prefix}] {line.rstrip()}", flush=True)
+            _write_console_line(f"[{prefix}] {line.rstrip()}")
     finally:
         pipe.close()
 
@@ -395,7 +412,8 @@ def ensure_service_ready(service: dict[str, Any]) -> None:
 
 def notify_user(title: str, message: str) -> None:
     log(f"{title}: {message}")
-    if os.name != "nt":
+    notifications_enabled = str(os.environ.get("DATA_GATHER_ENABLE_DESKTOP_NOTIFICATIONS", "")).strip().lower()
+    if os.name != "nt" or notifications_enabled not in {"1", "true", "yes", "on"}:
         return
     safe_message = message.replace("'", "''")
     safe_title = title.replace("'", "''")

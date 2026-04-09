@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -110,6 +111,23 @@ class ManageServicesTests(unittest.TestCase):
         self.assertEqual(kwargs["encoding"], "utf-8")
         self.assertEqual(kwargs["errors"], "replace")
         self.assertEqual(thread_cls.call_count, 2)
+
+    def test_write_console_line_falls_back_when_stdout_cannot_encode(self) -> None:
+        class FailingStdout(StringIO):
+            encoding = "gbk"
+
+            def write(self, value: str) -> int:
+                raise UnicodeEncodeError("gbk", value, 0, 1, "illegal multibyte sequence")
+
+            @property
+            def buffer(self):
+                return self._buffer
+
+        stdout = FailingStdout()
+        stdout._buffer = BytesIO()
+        with patch("manage_services.sys.stdout", stdout):
+            manage_services._write_console_line("▀ unicode block")
+        self.assertIn(b"? unicode block", stdout._buffer.getvalue())
 
     def test_start_prepared_services_reuses_existing_port_listener(self) -> None:
         service = {"name": "wechat_exporter", "ready_port": 3000}

@@ -60,10 +60,15 @@ def print_preflight_report(report: dict[str, list[dict[str, str]]]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Bootstrap the full stack: scan environment, install deps, run QR logins, then start all services."
+        description="Bootstrap the console first, then optionally start the full crawler stack."
     )
     parser.add_argument("--no-update", action="store_true", help="Skip pulling updates for clean managed repositories.")
     parser.add_argument("--skip-install", action="store_true", help="Skip dependency installation and only prepare/start services.")
+    parser.add_argument(
+        "--full-stack",
+        action="store_true",
+        help="Start crawler services during bootstrap instead of only bringing up the console backend.",
+    )
     parser.add_argument("--skip-wechat-login", action="store_true", help="Skip the WeChat QR login step.")
     parser.add_argument(
         "--interactive-wechat-login",
@@ -298,6 +303,28 @@ def ensure_mediacrawler_platform_login(
         add_report_entry(report, "checks", f"{platform} login", "repaired", f"refreshed from {previous_reason}")
 
 
+def record_manual_login_followups(report: dict[str, list[dict[str, str]]]) -> None:
+    add_report_entry(
+        report,
+        "checks",
+        "wechat login",
+        "skipped",
+        "start the crawler from the web console, then scan and refresh there",
+    )
+    for platform in ("xhs", "weibo", "douyin", "bilibili"):
+        add_report_entry(
+            report,
+            "checks",
+            f"{platform} login",
+            "skipped",
+            "start the crawler from the web console, then complete login there",
+        )
+
+
+def backend_only_prepared(prepared: list[tuple[dict, Path, dict[str, str]]]) -> list[tuple[dict, Path, dict[str, str]]]:
+    return [item for item in prepared if item[0]["name"] == "backend"]
+
+
 def main() -> int:
     args = parse_args()
     ensure_local_config_exists()
@@ -333,61 +360,71 @@ def main() -> int:
     wechat_process: subprocess.Popen[str] | None = None
     promoted_existing_processes: list[tuple[dict, subprocess.Popen[str]]] = []
     try:
-        if not args.skip_wechat_login:
-            if wechat_cwd is None or wechat_env is None:
-                raise RuntimeError("wechat_exporter preparation did not produce a runnable service context")
-            wechat_process = ensure_wechat_login(
-                services["wechat_exporter"],
-                wechat_cwd,
-                wechat_env,
-                interactive_refresh=args.interactive_wechat_login,
-                report=report,
-            )
-            if wechat_process is not None:
-                promoted_existing_processes.append((services["wechat_exporter"], wechat_process))
-        else:
-            add_report_entry(report, "checks", "wechat login", "skipped", "skip flag enabled")
-        if not args.skip_xhs_login:
-            ensure_mediacrawler_platform_login(
-                "xhs",
-                interactive_refresh=args.interactive_platform_logins,
-                report=report,
-            )
-        else:
-            add_report_entry(report, "checks", "xhs login", "skipped", "skip flag enabled")
-        if not args.skip_weibo_login:
-            ensure_mediacrawler_platform_login(
-                "weibo",
-                interactive_refresh=args.interactive_platform_logins,
-                report=report,
-            )
-        else:
-            add_report_entry(report, "checks", "weibo login", "skipped", "skip flag enabled")
-        if not args.skip_douyin_login:
-            ensure_mediacrawler_platform_login(
-                "douyin",
-                interactive_refresh=args.interactive_platform_logins,
-                report=report,
-            )
-        else:
-            add_report_entry(report, "checks", "douyin login", "skipped", "skip flag enabled")
-        if not args.skip_bilibili_login:
-            ensure_mediacrawler_platform_login(
-                "bilibili",
-                interactive_refresh=args.interactive_platform_logins,
-                report=report,
-            )
-        else:
-            add_report_entry(report, "checks", "bilibili login", "skipped", "skip flag enabled")
+        if args.full_stack:
+            if not args.skip_wechat_login:
+                if wechat_cwd is None or wechat_env is None:
+                    raise RuntimeError("wechat_exporter preparation did not produce a runnable service context")
+                wechat_process = ensure_wechat_login(
+                    services["wechat_exporter"],
+                    wechat_cwd,
+                    wechat_env,
+                    interactive_refresh=args.interactive_wechat_login,
+                    report=report,
+                )
+                if wechat_process is not None:
+                    promoted_existing_processes.append((services["wechat_exporter"], wechat_process))
+            else:
+                add_report_entry(report, "checks", "wechat login", "skipped", "skip flag enabled")
+            if not args.skip_xhs_login:
+                ensure_mediacrawler_platform_login(
+                    "xhs",
+                    interactive_refresh=args.interactive_platform_logins,
+                    report=report,
+                )
+            else:
+                add_report_entry(report, "checks", "xhs login", "skipped", "skip flag enabled")
+            if not args.skip_weibo_login:
+                ensure_mediacrawler_platform_login(
+                    "weibo",
+                    interactive_refresh=args.interactive_platform_logins,
+                    report=report,
+                )
+            else:
+                add_report_entry(report, "checks", "weibo login", "skipped", "skip flag enabled")
+            if not args.skip_douyin_login:
+                ensure_mediacrawler_platform_login(
+                    "douyin",
+                    interactive_refresh=args.interactive_platform_logins,
+                    report=report,
+                )
+            else:
+                add_report_entry(report, "checks", "douyin login", "skipped", "skip flag enabled")
+            if not args.skip_bilibili_login:
+                ensure_mediacrawler_platform_login(
+                    "bilibili",
+                    interactive_refresh=args.interactive_platform_logins,
+                    report=report,
+                )
+            else:
+                add_report_entry(report, "checks", "bilibili login", "skipped", "skip flag enabled")
 
-        add_report_entry(report, "startup", "next step", "ready", "starting managed services")
-        print_preflight_report(report)
+            add_report_entry(report, "startup", "next step", "ready", "starting full stack")
+            print_preflight_report(report)
 
-        manage_services.log("starting full stack")
-        manage_services.start_prepared_services(
-            prepared,
-            existing_processes=promoted_existing_processes,
-        )
+            manage_services.log("starting full stack")
+            manage_services.start_prepared_services(
+                prepared,
+                existing_processes=promoted_existing_processes,
+            )
+        else:
+            record_manual_login_followups(report)
+            add_report_entry(report, "startup", "next step", "ready", "starting console backend only")
+            print_preflight_report(report)
+
+            manage_services.log("starting console backend only")
+            manage_services.start_prepared_services(
+                backend_only_prepared(prepared),
+            )
     except Exception as exc:
         add_report_entry(report, "startup", "bootstrap", "failed", str(exc))
         print_preflight_report(report)

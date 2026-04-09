@@ -143,6 +143,50 @@ class BootstrapStackTests(unittest.TestCase):
         self.assertEqual(report["checks"][0]["status"], "skipped")
         self.assertIn("web console", report["checks"][0]["detail"])
 
+    def test_main_starts_backend_only_by_default(self) -> None:
+        args = type(
+            "Args",
+            (),
+            {
+                "no_update": True,
+                "skip_install": True,
+                "full_stack": False,
+                "skip_wechat_login": False,
+                "interactive_wechat_login": False,
+                "interactive_platform_logins": False,
+                "skip_xhs_login": False,
+                "skip_weibo_login": False,
+                "skip_douyin_login": False,
+                "skip_bilibili_login": False,
+            },
+        )()
+        services = {
+            "wechat_exporter": {"name": "wechat_exporter", "kind": "managed_repo"},
+            "mediacrawler_xhs": {"name": "mediacrawler_xhs", "kind": "managed_repo"},
+            "backend": {"name": "backend", "kind": "internal"},
+        }
+
+        def install_stub(service, *_args, **_kwargs):
+            return Path(service["name"]), {"SERVICE_NAME": service["name"]}
+
+        with patch("bootstrap_stack.parse_args", return_value=args), patch(
+            "bootstrap_stack.ensure_local_config_exists"
+        ), patch(
+            "bootstrap_stack.load_manifest_map", return_value=(services, {}, {})
+        ), patch(
+            "bootstrap_stack.install_service_without_env_gate", side_effect=install_stub
+        ), patch(
+            "bootstrap_stack.print_preflight_report"
+        ), patch(
+            "bootstrap_stack.manage_services.log"
+        ), patch(
+            "bootstrap_stack.manage_services.start_prepared_services"
+        ) as start_prepared_services:
+            bootstrap_stack.main()
+
+        prepared = start_prepared_services.call_args.args[0]
+        self.assertEqual([item[0]["name"] for item in prepared], ["backend"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,7 +53,7 @@
         "message": "小红书登录已过期，请打开 http://127.0.0.1:8080 在现有 Web 界面重新完成登录。"
       },
       "install": [["uv", "sync"], ["uv", "run", "playwright", "install"]],
-      "start": ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
+      "start": ["python", "../../scripts/start_mediacrawler_service.py", "--repo", ".", "--host", "0.0.0.0", "--port", "8080"],
       "ready_port": 8080,
       "healthcheck_url": "http://127.0.0.1:8080/api/health"
     },
