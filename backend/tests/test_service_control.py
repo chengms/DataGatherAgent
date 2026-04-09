@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock
 from pathlib import Path
 from unittest.mock import patch
 
@@ -95,6 +96,24 @@ class ServiceControlTests(unittest.TestCase):
         self.assertEqual(task.progress, 100)
         self.assertTrue(task.service_online)
         self.assertEqual(task.service_status, "online")
+
+    def test_launch_service_retries_with_shell_on_windows_invalid_argument(self) -> None:
+        service = {"name": "wechat_exporter", "start": ["corepack", "yarn", "dev"]}
+        process = MagicMock()
+        invalid_argument = OSError(22, "Invalid argument")
+        with patch("app.services.service_control.manage_services.resolve_command", return_value=["corepack.cmd", "yarn", "dev"]), patch(
+            "app.services.service_control.os.name", "nt"
+        ), patch(
+            "app.services.service_control.subprocess.Popen",
+            side_effect=[invalid_argument, process],
+        ) as popen:
+            launched_process, log_path = service_control._launch_service(service, Path("."), {})
+
+        self.assertIs(launched_process, process)
+        self.assertEqual(log_path.name, "wechat_exporter.log")
+        self.assertEqual(popen.call_count, 2)
+        self.assertEqual(popen.call_args_list[1].args[0], "corepack.cmd yarn dev")
+        self.assertTrue(popen.call_args_list[1].kwargs["shell"])
 
 
 if __name__ == "__main__":

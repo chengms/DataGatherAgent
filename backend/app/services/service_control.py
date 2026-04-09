@@ -141,14 +141,21 @@ def _launch_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> 
     log_path = _service_log_path(str(service["name"]))
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     with log_path.open("ab") as stream:
-        process = subprocess.Popen(
-            command,
-            cwd=cwd,
-            env=env,
-            stdout=stream,
-            stderr=subprocess.STDOUT,
-            creationflags=creationflags,
-        )
+        launch_kwargs: dict[str, Any] = {
+            "cwd": cwd,
+            "env": env,
+            "stdin": subprocess.DEVNULL,
+            "stdout": stream,
+            "stderr": subprocess.STDOUT,
+            "creationflags": creationflags,
+        }
+        try:
+            process = subprocess.Popen(command, **launch_kwargs)
+        except OSError as exc:
+            if os.name != "nt" or exc.errno != 22:
+                raise
+            # Windows sometimes rejects direct background launches for cmd-wrapped toolchains.
+            process = subprocess.Popen(subprocess.list2cmdline(command), shell=True, **launch_kwargs)
     return process, log_path
 
 
@@ -399,4 +406,3 @@ def get_service_action(task_id: str) -> dict[str, Any]:
         if task is None:
             raise NotFoundError("Service action task not found", "ManagedServiceAction")
         return _serialize_task(task)
-

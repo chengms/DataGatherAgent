@@ -35,6 +35,7 @@ class WechatLoginSession:
     known_auth_keys: set[str]
     qrcode_bytes: bytes
     qrcode_content_type: str
+    login_cookie: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: str = "pending_scan"
@@ -78,7 +79,7 @@ class WechatLoginService:
             }
 
         upstream_sid = f"{int(time.time() * 1000)}{secrets.randbelow(1000):03d}"
-        payload = self._request_json(
+        payload, set_cookies = self._request_json_response(
             opener,
             f"{base_url}/api/web/login/session/{upstream_sid}",
             method="POST",
@@ -86,9 +87,11 @@ class WechatLoginService:
         if payload.get("base_resp", {}).get("ret") != 0:
             raise NetworkError("无法创建公众号登录会话", {"response": payload})
 
+        login_cookie = self._extract_cookie_header(set_cookies, "uuid")
         qrcode_bytes, content_type = self._request_bytes(
             opener,
             f"{base_url}/api/web/login/getqrcode?rnd={time.time()}",
+            extra_headers=self._cookie_headers(login_cookie),
         )
         session_id = secrets.token_hex(16)
         session = WechatLoginSession(
@@ -100,6 +103,7 @@ class WechatLoginService:
             known_auth_keys=set(initial_store.keys()),
             qrcode_bytes=qrcode_bytes,
             qrcode_content_type=content_type,
+            login_cookie=login_cookie,
         )
         with self._lock:
             self._sessions[session_id] = session
@@ -118,6 +122,7 @@ class WechatLoginService:
         payload = self._request_json(
             session.opener,
             f"{session.base_url}/api/web/login/scan",
+            extra_headers=self._cookie_headers(session.login_cookie),
         )
         if payload.get("base_resp", {}).get("ret") != 0:
             raise NetworkError("公众号扫码状态检查失败", {"response": payload})
@@ -133,6 +138,7 @@ class WechatLoginService:
             qrcode_bytes, content_type = self._request_bytes(
                 session.opener,
                 f"{session.base_url}/api/web/login/getqrcode?rnd={time.time()}",
+                extra_headers=self._cookie_headers(session.login_cookie),
             )
             session.qrcode_bytes = qrcode_bytes
             session.qrcode_content_type = content_type
@@ -163,6 +169,7 @@ class WechatLoginService:
             session.opener,
             f"{session.base_url}/api/web/login/bizlogin",
             method="POST",
+            extra_headers=self._cookie_headers(session.login_cookie),
         )
         if payload.get("err"):
             session.status = "failed"
@@ -222,18 +229,48 @@ class WechatLoginService:
         *,
         method: str = "GET",
         body: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        payload, _ = self._request_json_response(
+            opener,
+            url,
+            method=method,
+            body=body,
+            extra_headers=extra_headers,
+        )
+        return payload
+
+    def _request_json_response(
+        self,
+        opener: urllib.request.OpenerDirector,
+        url: str,
+        *,
+        method: str = "GET",
+        body: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> tuple[dict[str, Any], list[str]]:
         data = None
         headers: dict[str, str] = {}
         if body is not None:
             data = urllib.parse.urlencode(body).encode("utf-8")
             headers["Content-Type"] = "application/x-www-form-urlencoded"
+        if extra_headers:
+            headers.update(extra_headers)
         request = urllib.request.Request(url, data=data, method=method, headers=headers)
         with self._open_with_retry(opener, request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return json.loads(response.read().decode("utf-8")), list(response.headers.get_all("Set-Cookie") or [])
 
-    def _request_bytes(self, opener: urllib.request.OpenerDirector, url: str) -> tuple[bytes, str]:
-        with self._open_with_retry(opener, url, timeout=30) as response:
+    def _request_bytes(
+        self,
+        opener: urllib.request.OpenerDirector,
+        url: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> tuple[bytes, str]:
+        request: urllib.request.Request | str = url
+        if extra_headers:
+            request = urllib.request.Request(url, headers=extra_headers, method="GET")
+        with self._open_with_retry(opener, request, timeout=30) as response:
             body = response.read()
             media_type = response.headers.get_content_type() or "image/png"
             return body, media_type
@@ -306,6 +343,19 @@ class WechatLoginService:
                 for cookie in handler.cookiejar:
                     if cookie.name == name:
                         return cookie.value
+        return None
+
+    def _cookie_headers(self, cookie_header: str | None) -> dict[str, str] | None:
+        if not cookie_header:
+            return None
+        return {"Cookie": cookie_header}
+
+    def _extract_cookie_header(self, set_cookies: list[str], name: str) -> str | None:
+        prefix = f"{name}="
+        for cookie in set_cookies:
+            header_value = cookie.split(";", 1)[0].strip()
+            if header_value.startswith(prefix):
+                return header_value
         return None
 
     def _open_with_retry(
