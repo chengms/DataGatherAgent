@@ -237,6 +237,19 @@ label {
   margin-bottom: 24px;
 }
 
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.page-stack,
+.page-section {
+  display: grid;
+  gap: 24px;
+}
+
 .command-layout {
   grid-template-columns: 1.25fr 1fr;
 }
@@ -248,6 +261,20 @@ label {
 .panel {
   border-radius: var(--radius);
   padding: 24px;
+}
+
+.sidebar-panel {
+  position: sticky;
+  top: 20px;
+}
+
+.sidebar-head {
+  margin-bottom: 14px;
+}
+
+.page-nav {
+  display: grid;
+  gap: 10px;
 }
 
 .panel-head,
@@ -395,12 +422,21 @@ textarea {
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.platform-option.compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: auto;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
 .platform-option.selected {
   border-color: rgba(15, 118, 110, 0.34);
   box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.14);
 }
 
 .platform-option:hover,
+.page-button:hover,
 .tab-button:hover,
 .primary-button:hover,
 .ghost-button:hover,
@@ -411,6 +447,10 @@ textarea {
 .platform-option input {
   width: auto;
   margin: 0;
+}
+
+.platform-option.compact input {
+  align-self: center;
 }
 
 .platform-option-head,
@@ -425,6 +465,10 @@ textarea {
   color: var(--ink);
   font-size: 18px;
   font-weight: 700;
+}
+
+.platform-option.compact .platform-option-title {
+  font-size: 16px;
 }
 
 .platform-option-desc,
@@ -453,6 +497,7 @@ textarea {
 .primary-button,
 .ghost-button,
 .link-button,
+.page-button,
 .tab-button {
   border: 0;
   cursor: pointer;
@@ -460,7 +505,8 @@ textarea {
 }
 
 .primary-button:disabled,
-.ghost-button:disabled {
+.ghost-button:disabled,
+.link-button:disabled {
   cursor: wait;
   opacity: 0.7;
 }
@@ -474,6 +520,7 @@ textarea {
 }
 
 .ghost-button,
+.page-button,
 .tab-button {
   border-radius: 999px;
   padding: 10px 14px;
@@ -488,6 +535,18 @@ textarea {
 }
 
 .tab-button.active {
+  background: linear-gradient(135deg, var(--accent), #155e75);
+  color: #fff;
+}
+
+.page-button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 700;
+}
+
+.page-button.active {
   background: linear-gradient(135deg, var(--accent), #155e75);
   color: #fff;
 }
@@ -856,6 +915,7 @@ textarea {
 }
 
 @media (max-width: 1120px) {
+  .app-shell,
   .hero,
   .command-layout,
   .workspace-layout,
@@ -868,6 +928,10 @@ textarea {
 
   .hero-status {
     justify-self: start;
+  }
+
+  .sidebar-panel {
+    position: static;
   }
 }
 
@@ -899,6 +963,19 @@ textarea {
   .workspace-headline {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .page-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-option.compact {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .platform-option.compact .platform-option-tag {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .qr-login-layout {

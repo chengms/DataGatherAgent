@@ -44,79 +44,92 @@
 
     <section id="updateNoticeBanner" class="update-banner hidden" aria-live="polite"></section>
 
-    <section class="layout command-layout">
-      <article class="panel control-panel">
-        <div class="panel-head compact">
+    <section class="app-shell">
+      <aside class="panel sidebar-panel">
+        <div class="panel-head compact sidebar-head">
           <div>
-            <p class="eyebrow">Launchpad</p>
-            <h2>新建采集任务</h2>
-            <p class="panel-intro">输入关键词后按平台发起预览。系统会同步记录最近任务，并把热门结果、抓取明细和本地沉淀放到同一工作区里。</p>
+            <p class="eyebrow">Console Nav</p>
+            <h2>工作区导航</h2>
+            <p class="panel-intro">从左侧切换任务发起、平台状态和结果回看。</p>
           </div>
-          <button id="refreshSourcesButton" class="ghost-button" type="button">重新复检平台</button>
         </div>
+        <div class="page-nav" role="tablist" aria-label="页面导航">
+          <button id="pageTaskButton" class="page-button active" type="button">任务发起</button>
+          <button id="pagePlatformButton" class="page-button" type="button">平台状态</button>
+          <button id="pageWorkspaceButton" class="page-button" type="button">结果工作区</button>
+        </div>
+      </aside>
 
-        <form id="previewForm" class="preview-form">
-          <label>
-            关键词
-            <textarea id="keywordsInput" rows="4" placeholder="AI Agent&#10;半导体&#10;储能">AI Agent
+      <div class="page-stack">
+        <section id="taskPage" class="page-section">
+          <article class="panel control-panel">
+            <div class="panel-head compact">
+              <div>
+                <p class="eyebrow">Launchpad</p>
+                <h2>新建采集任务</h2>
+                <p class="panel-intro">输入关键词后按平台发起预览。系统会同步记录最近任务，并把热门结果、抓取明细和本地沉淀放到同一工作区里。</p>
+              </div>
+            </div>
+
+            <form id="previewForm" class="preview-form">
+              <label>
+                关键词
+                <textarea id="keywordsInput" rows="4" placeholder="AI Agent&#10;半导体&#10;储能">AI Agent
 Semiconductor</textarea>
-          </label>
-          <p class="helper-line">支持按行或用逗号分隔多个主题，适合批量监测同一轮任务。</p>
+              </label>
+              <p class="helper-line">支持按行或用逗号分隔多个主题，适合批量监测同一轮任务。</p>
 
-          <fieldset class="platform-section">
-            <div class="section-top">
-              <legend>采集平台</legend>
-              <span id="platformSelectionMeta" class="subtle">尚未选择平台</span>
+              <fieldset class="platform-section">
+                <div class="section-top">
+                  <legend>采集平台</legend>
+                  <span id="platformSelectionMeta" class="subtle">尚未选择平台</span>
+                </div>
+                <div class="inline-actions">
+                  <button id="selectAllPlatformsButton" class="ghost-button tiny" type="button">全选已接入</button>
+                  <button id="clearPlatformsButton" class="ghost-button tiny" type="button">清空选择</button>
+                </div>
+                <div id="platformGrid" class="platform-grid"></div>
+              </fieldset>
+
+              <div class="three-up">
+                <label>
+                  每个平台采集上限
+                  <input id="limitInput" type="number" min="1" max="100" value="5">
+                </label>
+                <label>
+                  热门结果 Top K
+                  <input id="topKInput" type="number" min="1" max="50" value="3">
+                </label>
+                <label class="toggle-wrap">
+                  失败回退到 Mock
+                  <input id="fallbackInput" type="checkbox" checked>
+                </label>
+              </div>
+
+              <div class="control-footer">
+                <p class="status-line" id="formStatus">空闲中。</p>
+                <button id="runButton" class="primary-button" type="submit">运行预览</button>
+              </div>
+            </form>
+          </article>
+        </section>
+
+        <section id="platformPage" class="page-section hidden">
+          <article class="panel source-panel">
+            <div class="panel-head compact">
+              <div>
+                <p class="eyebrow">Platform Health</p>
+                <h2>平台状态与设置</h2>
+                <p class="panel-intro">这里统一处理平台运行状态、服务启动与重启、登录状态以及二维码加载操作。</p>
+              </div>
+              <button id="refreshSourcesButton" class="ghost-button" type="button">重新复检平台</button>
             </div>
-            <div class="inline-actions">
-              <button id="selectAllPlatformsButton" class="ghost-button tiny" type="button">全选已接入</button>
-              <button id="clearPlatformsButton" class="ghost-button tiny" type="button">清空选择</button>
-            </div>
-            <div id="platformGrid" class="platform-grid"></div>
-          </fieldset>
+            <div id="sourcesGrid" class="platform-status-grid"></div>
+          </article>
+        </section>
 
-          <div class="three-up">
-            <label>
-              每个平台采集上限
-              <input id="limitInput" type="number" min="1" max="100" value="5">
-            </label>
-            <label>
-              热门结果 Top K
-              <input id="topKInput" type="number" min="1" max="50" value="3">
-            </label>
-            <label class="toggle-wrap">
-              失败回退到 Mock
-              <input id="fallbackInput" type="checkbox" checked>
-            </label>
-          </div>
-
-          <div class="control-footer">
-            <p class="status-line" id="formStatus">空闲中。</p>
-            <button id="runButton" class="primary-button" type="submit">运行预览</button>
-          </div>
-        </form>
-      </article>
-
-      <article class="panel source-panel">
-        <div class="panel-head compact">
-          <div>
-            <p class="eyebrow">Platform Health</p>
-            <h2>平台健康与能力</h2>
-            <p class="panel-intro">这里会把站点名称、站点说明、默认抓取链路、服务在线情况和登录有效性拆开显示，避免把“已接入”误看成“可运行”。</p>
-          </div>
-        </div>
-        <div id="sourcesGrid" class="platform-status-grid"></div>
-        <div class="panel-subhead wide">
-          <div>
-            <h3>登录与设置</h3>
-            <p class="subtle">当平台需要扫码登录时，在这里直接加载二维码并完成登录。微信与 MediaCrawler 相关平台会分别走各自的登录链路。</p>
-          </div>
-        </div>
-        <div id="loginSettingsGrid" class="platform-status-grid"></div>
-      </article>
-    </section>
-
-    <section class="layout workspace-layout">
+        <section id="workspacePage" class="page-section hidden">
+          <section class="layout workspace-layout">
       <article class="panel result-panel">
         <div class="panel-head">
           <div>
@@ -249,6 +262,9 @@ Semiconductor</textarea>
         <p id="jobsMeta" class="subtle">正在等待数据。</p>
         <div id="jobsList" class="job-list empty-state">还没有加载任务。</div>
       </article>
+          </section>
+        </section>
+      </div>
     </section>
   </main>
 

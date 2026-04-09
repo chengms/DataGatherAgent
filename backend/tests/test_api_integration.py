@@ -102,6 +102,8 @@ class ApiIntegrationTests(unittest.TestCase):
             html = response.read().decode("utf-8")
         self.assertIn("数据采集工作台", html)
         self.assertIn("/assets/app_v2.js", html)
+        self.assertIn("工作区导航", html)
+        self.assertIn("平台状态与设置", html)
     def test_health_and_sources(self) -> None:
         health = self.get_json("/health")
         sources = self.get_json("/api/discovery/sources")

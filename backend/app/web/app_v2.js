@@ -49,6 +49,7 @@ const state = {
   catalogTotal: 0,
   backendHealthy: null,
   serviceActions: {},
+  activePageTab: "task",
   updateNotices: [],
   updateCheckedAt: "",
   wechatLogin: {
@@ -94,6 +95,12 @@ const state = {
 const elements = {
   healthBadge: document.getElementById("healthBadge"),
   updateNoticeBanner: document.getElementById("updateNoticeBanner"),
+  pageTaskButton: document.getElementById("pageTaskButton"),
+  pagePlatformButton: document.getElementById("pagePlatformButton"),
+  pageWorkspaceButton: document.getElementById("pageWorkspaceButton"),
+  taskPage: document.getElementById("taskPage"),
+  platformPage: document.getElementById("platformPage"),
+  workspacePage: document.getElementById("workspacePage"),
   heroPlatformCount: document.getElementById("heroPlatformCount"),
   heroPlatformMeta: document.getElementById("heroPlatformMeta"),
   heroLiveCount: document.getElementById("heroLiveCount"),
@@ -116,7 +123,6 @@ const elements = {
   refreshSourcesButton: document.getElementById("refreshSourcesButton"),
   refreshJobsButton: document.getElementById("refreshJobsButton"),
   sourcesGrid: document.getElementById("sourcesGrid"),
-  loginSettingsGrid: document.getElementById("loginSettingsGrid"),
   workspaceMeta: document.getElementById("workspaceMeta"),
   tabHotButton: document.getElementById("tabHotButton"),
   tabFetchedButton: document.getElementById("tabFetchedButton"),
@@ -230,6 +236,9 @@ function humanizeLoginReason(reason) {
   if (mapping[reason]) {
     return mapping[reason];
   }
+  if (String(reason || "").includes("AuthKey not found")) {
+    return "缺少公众号登录信息";
+  }
   if (String(reason || "").startsWith("xhs:")) {
     return "小红书登录信息已过期";
   }
@@ -251,12 +260,15 @@ function getPlatformLoginConfig(platformKey) {
 
 function getPlatformLoginButtonLabel(platformKey, capability) {
   if (!capability?.serviceOnline) {
-    return `先启动${capability?.serviceLabel || "关联服务"}`;
+    return "启动后登录";
+  }
+  if (capability?.loginStatus === "valid") {
+    return "重新登录";
   }
   if (platformKey === "wechat") {
-    return "公众号扫码登录";
+    return "加载登录二维码";
   }
-  return `${localizePlatform(platformKey)}扫码登录`;
+  return "加载扫码二维码";
 }
 
 function localizeServiceAction(action) {
@@ -290,7 +302,7 @@ function getPrimaryServiceActionLabel(capability) {
 
 function renderServiceProgress(serviceName) {
   const task = getServiceActionState(serviceName);
-  if (!task) {
+  if (!task || task.status === "success") {
     return "";
   }
   const tone = task.status === "failed" ? "danger" : task.status === "success" ? "success" : "active";
@@ -314,6 +326,30 @@ function renderServiceProgress(serviceName) {
       ${errorLine}
     </div>
   `;
+}
+
+function clearServiceActionState(serviceName) {
+  const task = getServiceActionState(serviceName);
+  if (task?.pollTimer) {
+    window.clearTimeout(task.pollTimer);
+  }
+  delete state.serviceActions[serviceName];
+}
+
+function getSelectorAvailability(platform, capability) {
+  if (!platform.supported) {
+    return { badge: "未接入", tone: "muted" };
+  }
+  if (capability?.runtimeReady) {
+    return { badge: "可用", tone: "success" };
+  }
+  if (capability?.runtimeState === "login_required" || capability?.runtimeState === "login_expired") {
+    return { badge: "待登录", tone: "warning" };
+  }
+  if (capability?.runtimeState === "service_offline") {
+    return { badge: "未启动", tone: "warning" };
+  }
+  return { badge: "待处理", tone: "muted" };
 }
 
 function renderPlatformLoginSteps(platformKey) {
@@ -500,7 +536,6 @@ async function pollServiceAction(serviceName) {
     const payload = await requestJson(`/api/discovery/service-actions/${encodeURIComponent(task.task_id)}`);
     upsertServiceAction(serviceName, payload);
     renderSourceCards();
-    renderLoginSettings();
     if (payload.status === "queued" || payload.status === "running") {
       scheduleServiceActionPoll(serviceName);
       return;
@@ -508,6 +543,8 @@ async function pollServiceAction(serviceName) {
     clearServiceActionPoll(serviceName);
     await Promise.allSettled([loadSources(true), loadHealth()]);
     if (payload.status === "success") {
+      clearServiceActionState(serviceName);
+      renderSourceCards();
       const serviceLabel = localizeServiceName(serviceName);
       setStatus(`${serviceLabel}${payload.action === "stop" ? "已停止" : "已就绪"}。`, "success");
       return;
@@ -521,7 +558,6 @@ async function pollServiceAction(serviceName) {
       error: error.message || "服务动作轮询失败。",
     });
     renderSourceCards();
-    renderLoginSettings();
     setStatus(error.message || "服务动作轮询失败。", "error");
   }
 }
@@ -544,7 +580,6 @@ async function startServiceAction(serviceName, action) {
     error: "",
   });
   renderSourceCards();
-  renderLoginSettings();
   setStatus(`正在${localizeServiceAction(action)}${localizeServiceName(serviceName)}...`);
   try {
     const payload = await requestJson(`/api/discovery/services/${encodeURIComponent(serviceName)}/actions`, {
@@ -554,12 +589,15 @@ async function startServiceAction(serviceName, action) {
     });
     upsertServiceAction(serviceName, payload);
     renderSourceCards();
-    renderLoginSettings();
     if (payload.status === "queued" || payload.status === "running") {
       scheduleServiceActionPoll(serviceName);
       return;
     }
     await Promise.allSettled([loadSources(true), loadHealth()]);
+    if (payload.status === "success") {
+      clearServiceActionState(serviceName);
+      renderSourceCards();
+    }
   } catch (error) {
     upsertServiceAction(serviceName, {
       action,
@@ -569,7 +607,6 @@ async function startServiceAction(serviceName, action) {
       error: error.message || `${localizeServiceAction(action)}失败。`,
     });
     renderSourceCards();
-    renderLoginSettings();
     setStatus(error.message || `${localizeServiceAction(action)}失败。`, "error");
   }
 }
@@ -650,11 +687,9 @@ function renderPlatformSelector() {
   elements.platformGrid.innerHTML = PLATFORM_OPTIONS.map((platform) => {
     const checked = previous.size ? previous.has(platform.key) : DEFAULT_SELECTED_PLATFORMS.has(platform.key);
     const capability = capabilityMap.get(platform.key);
-    const meta = getPlatformStateMeta(platform, capability);
-    const ready = Boolean(capability?.runtimeReady && platform.supported);
-    const live = Boolean(capability?.live && capability?.runtimeReady);
+    const availability = getSelectorAvailability(platform, capability);
     return `
-      <label class="platform-option${platform.supported ? "" : " disabled"}${checked ? " selected" : ""}">
+      <label class="platform-option compact${platform.supported ? "" : " disabled"}${checked ? " selected" : ""}">
         <input
           type="checkbox"
           name="platform-option"
@@ -662,16 +697,8 @@ function renderPlatformSelector() {
           ${checked ? "checked" : ""}
           ${platform.supported ? "" : "disabled"}
         >
-        <div class="platform-option-head">
-          <span class="platform-option-title">${platform.label}</span>
-          <span class="platform-option-tag ${meta.tone}">${meta.badge}</span>
-        </div>
-        <span class="platform-option-desc">${platform.description}</span>
-        <span class="platform-option-runtime">${meta.runtime}</span>
-        <div class="platform-option-foot">
-          <span class="mini-pill ${ready ? "" : "muted"}">${ready ? "默认链路就绪" : "默认链路待处理"}</span>
-          <span class="mini-pill ${live ? "" : "muted"}">${live ? "在线执行" : "需复检"}</span>
-        </div>
+        <span class="platform-option-title">${platform.label}</span>
+        <span class="platform-option-tag ${availability.tone}">${availability.badge}</span>
       </label>
     `;
   }).join("");
@@ -683,12 +710,22 @@ function renderSourceCards() {
   elements.sourcesGrid.innerHTML = PLATFORM_OPTIONS.map((platform) => {
     const capability = capabilityMap.get(platform.key);
     const meta = getPlatformStateMeta(platform, capability);
-    const ready = Boolean(capability?.runtimeReady && platform.supported);
-    const live = Boolean(capability?.live && capability?.runtimeReady);
     const serviceName = capability?.serviceName || "";
     const busy = isServiceActionBusy(serviceName);
     const primaryAction = getPrimaryServiceAction(capability);
     const canControl = Boolean(platform.supported && serviceName);
+    const showLoginAction = Boolean(platform.key === "wechat" || getPlatformLoginConfig(platform.key));
+    const canOpenLogin = Boolean(showLoginAction && capability?.serviceOnline && !busy);
+    const loginStatusLabel = capability?.loginRequired
+      ? (capability?.loginStatus === "valid" ? "有效" : humanizeLoginReason(capability?.loginReason || capability?.loginStatus))
+      : "无需登录";
+    const detailText = meta.tone === "danger"
+      ? "当前登录信息已失效，请重新加载二维码完成登录。"
+      : meta.tone === "warning" && capability?.runtimeState === "login_required"
+        ? "服务已在线，但还缺少当前平台的可用登录信息。"
+        : meta.tone === "warning" && capability?.runtimeState === "service_offline"
+          ? "服务尚未启动，启动后才可以进行二维码登录或执行默认链路。"
+          : meta.detail;
     return `
       <article class="source-card${platform.supported ? "" : " disabled"}">
         <div class="source-top">
@@ -699,27 +736,26 @@ function renderSourceCards() {
         <p class="source-desc">${platform.description}</p>
         <div class="source-runtime">
           <strong>${meta.runtime}</strong>
-          <p>${meta.detail}</p>
+          <p>${detailText}</p>
         </div>
         <div class="capability-row">
           <span class="mini-pill ${capability?.search ? "" : "muted"}">发现</span>
           <span class="mini-pill ${capability?.fetch ? "" : "muted"}">抓取</span>
           <span class="mini-pill ${capability?.serviceOnline ? "" : "muted"}">服务</span>
           <span class="mini-pill ${capability?.loginStatus === "valid" || !capability?.loginRequired ? "" : "muted"}">登录</span>
-          <span class="mini-pill ${live ? "" : "muted"}">在线</span>
         </div>
         <dl class="source-facts">
           <div>
-            <dt>站点名称</dt>
-            <dd>${platform.label}</dd>
+            <dt>平台状态</dt>
+            <dd>${meta.badge}</dd>
           </div>
           <div>
-            <dt>站点说明</dt>
-            <dd>${platform.description}</dd>
+            <dt>服务状态</dt>
+            <dd>${capability?.serviceOnline ? "在线" : "未启动"}</dd>
           </div>
           <div>
             <dt>登录状态</dt>
-            <dd>${capability?.loginRequired ? (capability?.loginStatus === "valid" ? "有效" : humanizeLoginReason(capability?.loginReason || capability?.loginStatus)) : "无需登录"}</dd>
+            <dd>${loginStatusLabel}</dd>
           </div>
           <div>
             <dt>检查时间</dt>
@@ -741,6 +777,14 @@ function renderSourceCards() {
             data-service-op="stop"
             ${capability?.serviceOnline && !busy ? "" : "disabled"}
           >停止服务</button>
+          ${showLoginAction ? `
+            <button
+              type="button"
+              class="link-button"
+              data-open-login="${platform.key}"
+              ${canOpenLogin ? "" : "disabled"}
+            >${getPlatformLoginButtonLabel(platform.key, capability)}</button>
+          ` : ""}
         </div>
         ${renderServiceProgress(serviceName)}
       </article>
@@ -757,78 +801,7 @@ function renderSourceCards() {
       startServiceAction(serviceName, action);
     });
   });
-}
-
-function renderLoginSettings() {
-  const capabilityMap = buildCapabilityMap();
-  const loginPlatforms = PLATFORM_OPTIONS.filter((platform) => platform.key === "wechat" || getPlatformLoginConfig(platform.key));
-  elements.loginSettingsGrid.innerHTML = loginPlatforms.map((platform) => {
-    const capability = capabilityMap.get(platform.key);
-    const meta = getPlatformStateMeta(platform, capability);
-    const actionLabel = getPlatformLoginButtonLabel(platform.key, capability);
-    const serviceName = capability?.serviceName || "";
-    const busy = isServiceActionBusy(serviceName);
-    const canOpen = Boolean(capability?.serviceOnline && !busy);
-    const primaryAction = getPrimaryServiceAction(capability);
-    const actionHint = platform.key === "wechat"
-      ? "二维码会通过公众号服务生成并显示在当前页面。"
-      : "二维码会通过无头登录会话生成并显示在当前页面。";
-    return `
-      <article class="source-card${platform.supported ? "" : " disabled"}">
-        <div class="source-top">
-          <span class="pill ${meta.tone === "danger" ? "danger" : meta.tone === "warning" ? "offline" : ""}">${meta.badge}</span>
-          <span class="kind">${capability?.serviceLabel || "默认链路"}</span>
-        </div>
-        <h3>${platform.label}</h3>
-        <p class="source-desc">${platform.description}</p>
-        <div class="source-runtime">
-          <strong>${capability?.loginRequired ? (capability?.loginStatus === "valid" ? "当前登录有效" : humanizeLoginReason(capability?.loginReason || capability?.loginStatus)) : "当前平台无需登录"}</strong>
-          <p>${actionHint}</p>
-        </div>
-        <div class="capability-row">
-          <span class="mini-pill ${capability?.serviceOnline ? "" : "muted"}">服务</span>
-          <span class="mini-pill ${capability?.loginStatus === "valid" || !capability?.loginRequired ? "" : "muted"}">登录</span>
-          <span class="mini-pill ${capability?.runtimeReady ? "" : "muted"}">链路</span>
-        </div>
-        <div class="card-actions">
-          <button
-            type="button"
-            class="link-button"
-            data-service-action="${escapeAttribute(serviceName)}"
-            data-service-op="${escapeAttribute(primaryAction)}"
-            ${serviceName && !busy ? "" : "disabled"}
-          >${busy ? `${localizeServiceAction(getServiceActionState(serviceName)?.action)}中...` : getPrimaryServiceActionLabel(capability)}</button>
-          <button
-            type="button"
-            class="link-button"
-            data-service-action="${escapeAttribute(serviceName)}"
-            data-service-op="stop"
-            ${capability?.serviceOnline && !busy ? "" : "disabled"}
-          >停止服务</button>
-          <button
-            type="button"
-            class="link-button"
-            data-open-login="${platform.key}"
-            ${canOpen ? "" : "disabled"}
-          >${actionLabel}</button>
-        </div>
-        ${renderServiceProgress(serviceName)}
-      </article>
-    `;
-  }).join("");
-
-  elements.loginSettingsGrid.querySelectorAll("button[data-service-action]").forEach((button) => {
-    const serviceName = button.getAttribute("data-service-action");
-    const action = button.getAttribute("data-service-op");
-    button.addEventListener("click", () => {
-      if (!serviceName || !action) {
-        return;
-      }
-      startServiceAction(serviceName, action);
-    });
-  });
-
-  elements.loginSettingsGrid.querySelectorAll("button[data-open-login]").forEach((button) => {
+  elements.sourcesGrid.querySelectorAll("button[data-open-login]").forEach((button) => {
     const platformKey = button.getAttribute("data-open-login");
     button.addEventListener("click", () => {
       if (!platformKey) {
@@ -903,6 +876,26 @@ function renderUpdateNotices() {
     </div>
     <div class="update-banner-list">${items}</div>
   `;
+}
+
+function setActivePageTab(tab) {
+  state.activePageTab = tab;
+  const viewMap = {
+    task: elements.taskPage,
+    platform: elements.platformPage,
+    workspace: elements.workspacePage,
+  };
+  const buttonMap = {
+    task: elements.pageTaskButton,
+    platform: elements.pagePlatformButton,
+    workspace: elements.pageWorkspaceButton,
+  };
+  Object.entries(viewMap).forEach(([key, node]) => {
+    node.classList.toggle("hidden", key !== tab);
+  });
+  Object.entries(buttonMap).forEach(([key, button]) => {
+    button.classList.toggle("active", key === tab);
+  });
 }
 
 function setActiveWorkspaceTab(tab) {
@@ -1687,7 +1680,6 @@ async function loadSources(forceRefresh = false) {
   state.sources = await requestJson(`/api/discovery/sources${suffix}`);
   renderPlatformSelector();
   renderSourceCards();
-  renderLoginSettings();
   renderLocalPlatformOptions();
   renderHeroSummary();
 }
@@ -1776,6 +1768,7 @@ async function runPreview(event) {
     state.fetchedFilters.keyword = "";
     elements.hotKeywordFilter.value = "";
     elements.fetchedKeywordFilter.value = "";
+    setActivePageTab("workspace");
     setActiveWorkspaceTab("hot");
     renderWorkspace();
     await Promise.allSettled([loadJobs(), loadLocalArticles()]);
@@ -1840,6 +1833,9 @@ function bindEvents() {
   elements.refreshJobsButton.addEventListener("click", loadJobs);
   elements.selectAllPlatformsButton.addEventListener("click", onSelectAllPlatforms);
   elements.clearPlatformsButton.addEventListener("click", onClearPlatforms);
+  elements.pageTaskButton.addEventListener("click", () => setActivePageTab("task"));
+  elements.pagePlatformButton.addEventListener("click", () => setActivePageTab("platform"));
+  elements.pageWorkspaceButton.addEventListener("click", () => setActivePageTab("workspace"));
   elements.tabHotButton.addEventListener("click", () => setActiveWorkspaceTab("hot"));
   elements.tabFetchedButton.addEventListener("click", () => setActiveWorkspaceTab("fetched"));
   elements.tabLocalButton.addEventListener("click", () => setActiveWorkspaceTab("local"));
@@ -1893,9 +1889,9 @@ function bindEvents() {
 
 async function bootstrap() {
   bindEvents();
+  setActivePageTab(state.activePageTab);
   renderPlatformSelector();
   renderSourceCards();
-  renderLoginSettings();
   renderLocalPlatformOptions();
   renderHeroSummary();
   renderUpdateNotices();
