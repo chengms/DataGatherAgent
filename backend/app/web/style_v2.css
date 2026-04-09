@@ -858,6 +858,10 @@ textarea {
   align-items: start;
 }
 
+.qr-login-layout.compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .qr-login-box {
   min-height: 320px;
   display: grid;
@@ -866,6 +870,10 @@ textarea {
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(31, 36, 48, 0.08);
+}
+
+.qr-login-box.hidden {
+  display: none;
 }
 
 .qr-login-image {

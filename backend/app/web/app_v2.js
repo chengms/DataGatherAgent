@@ -176,6 +176,8 @@ const elements = {
   platformLoginTitle: document.getElementById("platformLoginTitle"),
   platformLoginMeta: document.getElementById("platformLoginMeta"),
   platformLoginStatus: document.getElementById("platformLoginStatus"),
+  platformLoginLayout: document.getElementById("platformLoginLayout"),
+  platformLoginQrBox: document.getElementById("platformLoginQrBox"),
   platformLoginQrImage: document.getElementById("platformLoginQrImage"),
   platformLoginQrPlaceholder: document.getElementById("platformLoginQrPlaceholder"),
   platformLoginSteps: document.getElementById("platformLoginSteps"),
@@ -1473,6 +1475,8 @@ function renderPlatformLoginModal() {
   elements.platformLoginStatus.textContent = loginState.message || "等待开始。";
   renderPlatformLoginSteps(loginState.platformKey);
   const hasQr = Boolean(loginState.qrcodeDataUrl);
+  elements.platformLoginLayout.classList.toggle("compact", !hasQr);
+  elements.platformLoginQrBox.classList.toggle("hidden", !hasQr);
   elements.platformLoginQrImage.classList.toggle("hidden", !hasQr);
   elements.platformLoginQrPlaceholder.classList.toggle("hidden", hasQr);
   elements.platformLoginQrPlaceholder.textContent = hasQr
