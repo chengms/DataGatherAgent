@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -50,9 +51,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--login-type", default=None)
     parser.add_argument("--cookies", default=None)
     parser.add_argument(
+        "--browser-mode",
+        default=os.getenv("DATA_GATHER_BROWSER_MODE", "safe"),
+        help="Browser runtime mode: safe/cdp/standard. 'safe' prefers CDP with a system browser.",
+    )
+    parser.add_argument(
+        "--browser-path",
+        default=os.getenv("DATA_GATHER_BROWSER_PATH", ""),
+        help="Optional custom Chrome/Edge/Chromium executable path for CDP mode.",
+    )
+    parser.add_argument(
         "--headless",
         default=os.getenv("DATA_GATHER_BROWSER_HEADLESS", os.getenv("MEDIACRAWLER_HEADLESS", "true")),
         help="Whether to run MediaCrawler in headless mode. Defaults to true for server-safe crawling.",
+    )
+    parser.add_argument(
+        "--max-sleep-sec",
+        type=int,
+        default=int(os.getenv("DATA_GATHER_CRAWLER_MAX_SLEEP_SEC", "4")),
+        help="Upper bound for per-request random sleep inside MediaCrawler. Higher is safer but slower.",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=int(os.getenv("DATA_GATHER_CRAWLER_MAX_CONCURRENCY", "1")),
+        help="Maximum MediaCrawler concurrency. Defaults to 1 for conservative crawling.",
     )
     parser.add_argument(
         "--start-command",
@@ -68,10 +91,68 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_subprocess_env(cache_dir: Path) -> dict[str, str]:
+def safe_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def create_runtime_profile(args: argparse.Namespace) -> dict[str, Any]:
+    mode = str(getattr(args, "browser_mode", "safe") or "safe").strip().lower()
+    if mode not in {"safe", "cdp", "standard"}:
+        mode = "safe"
+    return {
+        "mode": mode,
+        "headless": parse_bool(getattr(args, "headless", "true")),
+        "browser_path": str(getattr(args, "browser_path", "") or "").strip(),
+        "max_sleep_sec": safe_int(getattr(args, "max_sleep_sec", 4), 4),
+        "max_concurrency": safe_int(getattr(args, "max_concurrency", 1), 1),
+    }
+
+
+def build_sitecustomize(runtime_dir: Path, profile: dict[str, Any]) -> Path:
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    script_path = runtime_dir / "sitecustomize.py"
+    browser_path = str(profile["browser_path"]).replace("\\", "\\\\")
+    script_path.write_text(
+        textwrap.dedent(
+            f"""
+            import os
+
+            try:
+                import config
+            except Exception:
+                config = None
+
+            if config is not None:
+                config.HEADLESS = {bool(profile["headless"])}
+                config.CDP_HEADLESS = {bool(profile["headless"])}
+                config.ENABLE_CDP_MODE = {profile["mode"] in {"safe", "cdp"}}
+                config.CUSTOM_BROWSER_PATH = r"{browser_path}"
+                config.MAX_CONCURRENCY_NUM = {int(profile["max_concurrency"])}
+                config.CRAWLER_MAX_SLEEP_SEC = {int(profile["max_sleep_sec"])}
+                config.ENABLE_GET_SUB_COMMENTS = False
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return script_path
+
+
+def build_subprocess_env(cache_dir: Path, bootstrap_dir: Path, profile: dict[str, Any]) -> dict[str, str]:
     env = os.environ.copy()
     cache_dir.mkdir(parents=True, exist_ok=True)
     env["UV_CACHE_DIR"] = str(cache_dir)
+    build_sitecustomize(bootstrap_dir, profile)
+    existing_pythonpath = str(env.get("PYTHONPATH", "")).strip()
+    env["PYTHONPATH"] = (
+        str(bootstrap_dir)
+        if not existing_pythonpath
+        else os.pathsep.join([str(bootstrap_dir), existing_pythonpath])
+    )
     return env
 
 
@@ -491,11 +572,13 @@ def main() -> int:
     repo_dir = Path(args.repo).resolve()
     if not repo_dir.exists():
         raise RuntimeError(f"managed MediaCrawler checkout does not exist: {repo_dir}")
+    runtime_profile = create_runtime_profile(args)
 
     with tempfile.TemporaryDirectory(prefix=f"mediacrawler-{args.platform}-") as temp_dir:
         temp_root = Path(temp_dir)
         output_dir = temp_root / "output"
         cache_dir = temp_root / "uv-cache"
+        bootstrap_dir = temp_root / "bootstrap"
         stdout_path = temp_root / "stdout.log"
         stderr_path = temp_root / "stderr.log"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -507,7 +590,7 @@ def main() -> int:
             completed = subprocess.run(
                 command,
                 cwd=repo_dir,
-                env=build_subprocess_env(cache_dir),
+                env=build_subprocess_env(cache_dir, bootstrap_dir, runtime_profile),
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_handle,
                 stderr=stderr_handle,
@@ -532,7 +615,7 @@ def main() -> int:
                 completed = subprocess.run(
                     retry_command,
                     cwd=repo_dir,
-                    env=build_subprocess_env(cache_dir),
+                    env=build_subprocess_env(cache_dir, bootstrap_dir, runtime_profile),
                     stdin=subprocess.DEVNULL,
                     stdout=stdout_handle,
                     stderr=stderr_handle,

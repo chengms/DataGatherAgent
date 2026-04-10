@@ -166,8 +166,12 @@ The managed stack now covers two external repositories:
 
 - `XHS_MEDIACRAWLER_LOGIN_TYPE`
 - `XHS_MEDIACRAWLER_COOKIES`
+- `DATA_GATHER_BROWSER_MODE` (`safe` by default; prefers a system Chrome/Edge CDP session when available)
+- `DATA_GATHER_BROWSER_PATH` (optional explicit Chrome/Edge/Chromium path for CDP mode)
 - `DATA_GATHER_BROWSER_HEADLESS` (defaults to `true`, recommended for servers)
 - `MEDIACRAWLER_HEADLESS` (legacy alias for the same behavior)
+- `DATA_GATHER_CRAWLER_MAX_SLEEP_SEC` (defaults to `4` for more conservative pacing)
+- `DATA_GATHER_CRAWLER_MAX_CONCURRENCY` (defaults to `1`)
 
 `weibo_external_*`, `douyin_external_*`, and `bilibili_external_*` run through `scripts/mediacrawler_platform_runner.py` using the same managed `MediaCrawler` checkout.
 
