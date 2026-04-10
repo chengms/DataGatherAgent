@@ -160,6 +160,48 @@ class FetchedArticleSearchResponse(BaseModel):
     items: list[FetchedArticleRecord]
 
 
+class ExternalArticleQueryEcho(BaseModel):
+    keyword: str | None = None
+    platforms: list[str] = Field(default_factory=list)
+    content_kind: str | None = None
+    published_from: str | None = None
+    published_to: str | None = None
+    page: int
+    page_size: int
+
+
+class ExternalArticleSummary(BaseModel):
+    article_id: int
+    job_id: int
+    keyword: str
+    platform: str
+    content_kind: str
+    source_engine: str
+    title: str
+    source_url: str
+    account_name: str
+    publish_time: str
+    read_count: int
+    comment_count: int
+    excerpt: str = ""
+    has_html: bool = False
+    data_url: str
+    preview_url: str
+
+
+class ExternalArticleDetailResponse(ExternalArticleSummary):
+    content_text: str
+    content_html: str = ""
+    source_id: str
+    comments: list[ArticleComment] = Field(default_factory=list)
+
+
+class ExternalArticleListResponse(BaseModel):
+    query: ExternalArticleQueryEcho
+    total: int
+    items: list[ExternalArticleSummary]
+
+
 class SourceInfoResponse(BaseModel):
     name: str
     kind: str

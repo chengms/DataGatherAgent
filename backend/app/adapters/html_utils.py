@@ -21,3 +21,28 @@ def extract_html_fragment(soup: BeautifulSoup, selectors: tuple[str, ...]) -> st
         if node is not None:
             return str(node)
     return ""
+
+
+def sanitize_html_fragment(raw_html: str) -> str:
+    wrapper = BeautifulSoup(f"<div id='content-root'>{raw_html or ''}</div>", "html.parser")
+    root = wrapper.select_one("#content-root")
+    if root is None:
+        return ""
+    for node in root.select("script, noscript, iframe, frame, object, embed, base, meta, link, form, input, button, textarea, select, option"):
+        node.decompose()
+    for node in root.select("*"):
+        for attribute_name in list(node.attrs.keys()):
+            lower_name = attribute_name.lower()
+            value = node.attrs.get(attribute_name)
+            value_text = " ".join(value) if isinstance(value, list) else str(value or "")
+            if lower_name.startswith("on"):
+                del node.attrs[attribute_name]
+                continue
+            if lower_name in {"href", "src"} and value_text.strip().lower().startswith("javascript:"):
+                del node.attrs[attribute_name]
+                continue
+            if lower_name == "target":
+                node.attrs[attribute_name] = "_blank"
+        if node.name == "a":
+            node.attrs["rel"] = "noreferrer noopener"
+    return root.decode_contents()

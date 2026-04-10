@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import discovery, workflows
+from app.api.routes import discovery, external_exports, workflows
 from app.core.exceptions import AppException
 from app.core.logging import configure_logging
 from app.db.init_db import ensure_db_initialized
@@ -25,6 +25,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 app.include_router(discovery.router, prefix="/api/discovery", tags=["discovery"])
 app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
+app.include_router(external_exports.router, prefix="/api/external/v1", tags=["external"])
 app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
 
 

@@ -101,6 +101,11 @@ class ApiArticleEndpointsTests(unittest.TestCase):
         with request.urlopen(http_request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    @classmethod
+    def get_text(cls, path: str) -> str:
+        with request.urlopen(cls.build_url(path), timeout=30) as response:
+            return response.read().decode("utf-8")
+
     def test_article_search_and_detail_endpoints(self) -> None:
         preview = self.post_json(
             "/api/workflows/preview",
@@ -154,6 +159,47 @@ class ApiArticleEndpointsTests(unittest.TestCase):
 
         refreshed = self.get_json(f"/api/workflows/articles?page=1&page_size=10&job_id={preview['job_id']}")
         self.assertEqual(refreshed["total"], 0)
+
+    def test_external_export_endpoints(self) -> None:
+        self.post_json(
+            "/api/workflows/preview",
+            {
+                "keywords": ["Grid Storage"],
+                "platforms": ["wechat"],
+                "limit": 2,
+                "top_k": 2,
+                "fallback_to_mock": True,
+            },
+        )
+
+        payload = self.get_json(
+            "/api/external/v1/articles"
+            "?keyword=Grid"
+            "&platforms=wechat"
+            "&published_from=2020-01-01"
+            "&published_to=2100-01-01"
+            "&page=1"
+            "&page_size=10"
+        )
+        self.assertGreaterEqual(payload["total"], 1)
+        self.assertEqual(payload["query"]["platforms"], ["wechat"])
+        self.assertEqual(payload["query"]["keyword"], "Grid")
+
+        item = payload["items"][0]
+        self.assertIn("/api/external/v1/articles/", item["data_url"])
+        self.assertIn("/api/external/v1/articles/", item["preview_url"])
+        self.assertTrue(item["preview_url"].endswith("/preview"))
+
+        detail_path = item["data_url"].replace(self.build_url(""), "")
+        detail = self.get_json(detail_path)
+        self.assertEqual(detail["article_id"], item["article_id"])
+        self.assertIn("content_text", detail)
+        self.assertIn("content_html", detail)
+
+        preview_path = item["preview_url"].replace(self.build_url(""), "")
+        preview_html = self.get_text(preview_path)
+        self.assertIn(item["title"], preview_html)
+        self.assertIn("原文链接", preview_html)
 
     def test_missing_article_returns_not_found(self) -> None:
         status_code, payload = self.get_error_json("/api/workflows/articles/999999")

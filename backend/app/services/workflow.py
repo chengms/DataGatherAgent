@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, time
+
 from app.db.init_db import ensure_db_initialized
 from app.core.exceptions import FetchRequestError, JobNotFoundError, NotFoundError, SearchRequestError
 from app.schemas.workflow import (
@@ -40,6 +42,50 @@ class WorkflowService:
             if normalized and normalized not in platforms:
                 platforms.append(normalized)
         return platforms or ["wechat"]
+
+    def normalize_platform_filters(self, platform: str | None = None, platforms: list[str] | None = None) -> list[str]:
+        candidates: list[str] = []
+        for item in platforms or []:
+            normalized = str(item or "").strip()
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+        normalized_platform = (platform or "").strip()
+        if normalized_platform and normalized_platform not in candidates:
+            candidates.append(normalized_platform)
+        return candidates
+
+    def normalize_datetime_filter(self, value: str | None, *, end_of_day: bool = False) -> str | None:
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        for parser in (
+            lambda text: datetime.fromisoformat(text.replace("Z", "+00:00")),
+            lambda text: datetime.strptime(text, "%Y-%m-%d"),
+        ):
+            try:
+                parsed = parser(raw)
+                break
+            except ValueError:
+                continue
+        else:
+            raise SearchRequestError(
+                "published time filter format is invalid",
+                details={"value": raw, "accepted_formats": ["YYYY-MM-DD", "ISO 8601 datetime"]},
+            )
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(
+                hour=23 if end_of_day and parsed.time() == time.min else parsed.hour,
+                minute=59 if end_of_day and parsed.time() == time.min else parsed.minute,
+                second=59 if end_of_day and parsed.time() == time.min else parsed.second,
+                microsecond=999999 if end_of_day and parsed.time() == time.min else parsed.microsecond,
+                tzinfo=UTC,
+            )
+        else:
+            parsed = parsed.astimezone(UTC)
+            if end_of_day and parsed.time() == time.min and len(raw) == 10:
+                parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return parsed.isoformat()
 
     def _resolve_sources_for_platform(self, payload: WorkflowPreviewRequest, platform: str) -> tuple[str, str]:
         if payload.discovery_source and payload.fetch_source and len(self._resolve_platforms(payload)) == 1:
@@ -179,23 +225,32 @@ class WorkflowService:
         *,
         keyword: str | None = None,
         platform: str | None = None,
+        platforms: list[str] | None = None,
         content_kind: str | None = None,
         job_id: int | None = None,
+        published_from: str | None = None,
+        published_to: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> FetchedArticleSearchResponse:
         ensure_db_initialized()
         normalized_keyword = (keyword or "").strip() or None
-        normalized_platform = (platform or "").strip() or None
+        normalized_platforms = self.normalize_platform_filters(platform=platform, platforms=platforms)
+        normalized_platform = normalized_platforms[0] if len(normalized_platforms) == 1 else None
         normalized_kind = (content_kind or "").strip() or None
+        normalized_published_from = self.normalize_datetime_filter(published_from)
+        normalized_published_to = self.normalize_datetime_filter(published_to, end_of_day=True)
         safe_page = max(1, int(page))
         safe_page_size = max(1, min(100, int(page_size)))
         offset = (safe_page - 1) * safe_page_size
         total, items = workflow_repository.search_fetched_articles(
             keyword=normalized_keyword,
             platform=normalized_platform,
+            platforms=normalized_platforms if len(normalized_platforms) > 1 else None,
             content_kind=normalized_kind,
             job_id=job_id,
+            published_from=normalized_published_from,
+            published_to=normalized_published_to,
             offset=offset,
             limit=safe_page_size,
         )

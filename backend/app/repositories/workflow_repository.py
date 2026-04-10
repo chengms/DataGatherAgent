@@ -212,8 +212,11 @@ class WorkflowRepository:
         *,
         keyword: str | None = None,
         platform: str | None = None,
+        platforms: list[str] | None = None,
         content_kind: str | None = None,
         job_id: int | None = None,
+        published_from: str | None = None,
+        published_to: str | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[int, list[dict]]:
@@ -228,12 +231,22 @@ class WorkflowRepository:
         if platform:
             where_clauses.append("platform = ?")
             params.append(platform)
+        elif platforms:
+            placeholders = ", ".join("?" for _ in platforms)
+            where_clauses.append(f"platform IN ({placeholders})")
+            params.extend(platforms)
         if content_kind:
             where_clauses.append("content_kind = ?")
             params.append(content_kind)
         if job_id is not None:
             where_clauses.append("job_id = ?")
             params.append(job_id)
+        if published_from:
+            where_clauses.append("publish_time >= ?")
+            params.append(published_from)
+        if published_to:
+            where_clauses.append("publish_time <= ?")
+            params.append(published_to)
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         with db_cursor() as (_, cursor):
             total = cursor.execute(

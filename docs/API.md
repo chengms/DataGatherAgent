@@ -74,6 +74,39 @@ Returns saved workflow job summaries.
 
 Returns a saved workflow job and its ranked hot articles.
 
+### `GET /api/external/v1/articles`
+
+Standard export API for external systems that need to read locally stored crawl results.
+
+Query parameters:
+
+- `keyword`: fuzzy match against title, content, account name, keyword, and source URL
+- `platforms`: comma-separated platform list such as `wechat,xiaohongshu`
+- `content_kind`: optional content type filter such as `article`, `note`, or `video`
+- `published_from`: publish-time lower bound, accepts `YYYY-MM-DD` or ISO 8601 datetime
+- `published_to`: publish-time upper bound, accepts `YYYY-MM-DD` or ISO 8601 datetime
+- `page`: 1-based page index
+- `page_size`: page size between 1 and 100
+
+Each returned item includes:
+
+- `data_url`: JSON detail link
+- `preview_url`: directly openable HTML preview link
+- article metadata such as title, platform, publish time, source URL, and excerpt
+
+### `GET /api/external/v1/articles/{article_id}`
+
+Returns the full local article payload including:
+
+- `content_text`
+- `content_html`
+- `comments`
+- `data_url` and `preview_url`
+
+### `GET /api/external/v1/articles/{article_id}/preview`
+
+Returns a rendered HTML preview page for the locally stored article body and comments.
+
 ## Error Shape
 
 Application exceptions are normalized to this shape:
@@ -105,3 +138,4 @@ Typical error codes:
 - Static assets are served from `/assets/*`
 - Workflow preview responses include `platforms` to reflect the selected platform set
 - Current automated tests cover health checks, adapter listing, workflow preview, job queries, adapter registry behavior, and ranking behavior
+- External export API details are documented in `docs/EXTERNAL_EXPORT_API.md`
