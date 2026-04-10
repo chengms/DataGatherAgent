@@ -126,6 +126,52 @@ Semiconductor</textarea>
             </div>
             <div id="sourcesGrid" class="platform-status-grid"></div>
           </article>
+          <article class="panel source-panel">
+            <div class="panel-head compact">
+              <div>
+                <p class="eyebrow">Safety Profile</p>
+                <h2>MediaCrawler 安全设置</h2>
+                <p class="panel-intro">作用于小红书、微博、抖音和 B 站的共享浏览器链路。调高间隔、保持低并发会更稳，但采集会更慢。</p>
+              </div>
+            </div>
+            <form id="mediacrawlerSettingsForm" class="search-form">
+              <div class="chip-row" id="mediacrawlerScopeChips"></div>
+              <div class="settings-grid">
+                <label>
+                  浏览器模式
+                  <select id="mediacrawlerBrowserModeInput">
+                    <option value="safe">safe · 推荐</option>
+                    <option value="cdp">cdp · 真实浏览器链路</option>
+                    <option value="standard">standard · 标准 Playwright</option>
+                  </select>
+                </label>
+                <label class="toggle-card">
+                  <span>无头运行</span>
+                  <input id="mediacrawlerHeadlessInput" type="checkbox" checked>
+                </label>
+                <label>
+                  最大等待秒数
+                  <input id="mediacrawlerSleepInput" type="number" min="1" max="15" value="4">
+                </label>
+                <label>
+                  最大并发数
+                  <input id="mediacrawlerConcurrencyInput" type="number" min="1" max="4" value="1">
+                </label>
+              </div>
+              <label>
+                浏览器路径（可选）
+                <input id="mediacrawlerBrowserPathInput" type="text" placeholder="例如 C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe">
+              </label>
+              <p id="mediacrawlerSettingsHint" class="helper-line">推荐保持 `safe + 无头 + 并发 1`，如果服务器没有系统 Chrome/Edge，再考虑切到 `standard`。</p>
+              <div class="control-footer">
+                <span id="mediacrawlerSettingsStatus" class="subtle">正在读取当前设置。</span>
+                <div class="inline-actions">
+                  <button id="resetMediacrawlerSettingsButton" class="ghost-button" type="button">恢复推荐值</button>
+                  <button id="saveMediacrawlerSettingsButton" class="primary-button" type="submit">保存设置</button>
+                </div>
+              </div>
+            </form>
+          </article>
         </section>
 
         <section id="workspacePage" class="page-section hidden">

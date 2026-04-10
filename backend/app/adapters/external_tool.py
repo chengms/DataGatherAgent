@@ -14,6 +14,7 @@ from app.adapters.html_utils import text_to_html_fragment
 from app.core.config import BASE_DIR, EXTERNAL_TOOLS_DIR
 from app.core.exceptions import FetchRequestError, SearchRequestError
 from app.schemas.workflow import ArticleComment, DiscoveryCandidate, FetchedArticle
+from app.services.platform_settings import build_mediacrawler_runtime_cli_args
 
 
 @dataclass(frozen=True)
@@ -233,12 +234,14 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
                 },
             )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
+        runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
                 str(runner_script),
                 "--repo",
                 str(repo_path),
+                *runtime_args,
                 "--keyword",
                 keyword,
                 "--limit",
@@ -299,6 +302,7 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
                 },
             )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
+        runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
@@ -307,6 +311,7 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
                 "fetch",
                 "--repo",
                 str(repo_path),
+                *runtime_args,
                 "--source-url",
                 candidate.source_url,
             ],
@@ -368,6 +373,7 @@ class MediaCrawlerPlatformDiscoveryAdapter(ExternalDiscoveryAdapter):
                 },
             )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
+        runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
@@ -376,6 +382,7 @@ class MediaCrawlerPlatformDiscoveryAdapter(ExternalDiscoveryAdapter):
                 self.platform_name,
                 "--repo",
                 str(repo_path),
+                *runtime_args,
                 "--keyword",
                 keyword,
                 "--limit",
@@ -429,6 +436,7 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
                 },
             )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
+        runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
             argv=[
                 sys.executable,
@@ -439,6 +447,7 @@ class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
                 "fetch",
                 "--repo",
                 str(repo_path),
+                *runtime_args,
                 "--source-url",
                 candidate.source_url,
             ],

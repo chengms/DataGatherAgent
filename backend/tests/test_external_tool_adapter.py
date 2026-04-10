@@ -2,6 +2,7 @@ import json
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from app.adapters.base import AdapterInfo
 from app.adapters.external_tool import (
@@ -212,6 +213,14 @@ class ExternalToolAdapterTests(unittest.TestCase):
         self.assertIn("MediaCrawler", metadata["path"])
         self.assertIn("NanmiCoder/MediaCrawler", metadata["remote_url"])
 
+    def test_mediacrawler_discovery_command_includes_runtime_settings(self) -> None:
+        adapter = MediaCrawlerXiaohongshuDiscoveryAdapter()
+        with patch("app.adapters.external_tool.build_mediacrawler_runtime_cli_args", return_value=["--browser-mode", "cdp", "--headless", "true"]):
+            command = adapter.build_discovery_command(keyword="AI", limit=2)
+        self.assertIn("--browser-mode", command.argv)
+        self.assertIn("cdp", command.argv)
+        self.assertIn("--headless", command.argv)
+
     def test_mediacrawler_adapter_parses_normalized_output(self) -> None:
         adapter = MediaCrawlerXiaohongshuDiscoveryAdapter()
         result = ExternalRunResult(
@@ -242,6 +251,23 @@ class ExternalToolAdapterTests(unittest.TestCase):
         metadata = adapter.describe_managed_repository()
         self.assertEqual(metadata["slug"], "mediacrawler")
         self.assertIn("MediaCrawler", metadata["path"])
+
+    def test_mediacrawler_platform_fetch_command_includes_runtime_settings(self) -> None:
+        adapter = MediaCrawlerBilibiliFetchAdapter()
+        candidate = DiscoveryCandidate(
+            keyword="AI",
+            source_engine="bilibili_external_search",
+            title="Bilibili Title",
+            snippet="summary",
+            source_url="https://www.bilibili.com/video/BV1demo",
+            account_name="UP A",
+            discovered_at=datetime.now(UTC),
+        )
+        with patch("app.adapters.external_tool.build_mediacrawler_runtime_cli_args", return_value=["--max-sleep-sec", "6", "--max-concurrency", "1"]):
+            command = adapter.build_fetch_command(candidate)
+        self.assertIn("--max-sleep-sec", command.argv)
+        self.assertIn("6", command.argv)
+        self.assertIn("--max-concurrency", command.argv)
 
     def test_mediacrawler_fetch_adapter_parses_normalized_output(self) -> None:
         adapter = MediaCrawlerXiaohongshuFetchAdapter()

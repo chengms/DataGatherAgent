@@ -377,6 +377,7 @@ textarea {
 .meta-grid,
 .platform-grid,
 .platform-status-grid,
+.settings-grid,
 .summary-grid {
   display: grid;
   gap: 14px;
@@ -408,6 +409,10 @@ textarea {
 .platform-status-grid,
 .summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .platform-option {
@@ -492,6 +497,22 @@ textarea {
 .toggle-wrap input {
   width: auto;
   transform: scale(1.15);
+}
+
+.toggle-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.toggle-card input {
+  width: auto;
+  transform: scale(1.12);
 }
 
 .primary-button,

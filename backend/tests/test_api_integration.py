@@ -24,9 +24,14 @@ class ApiIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tempdir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.tempdir.name) / "integration.sqlite3"
+        cls.service_local_path = Path(cls.tempdir.name) / "services.local.json"
+        cls.service_example_path = Path(cls.tempdir.name) / "services.local.example.json"
+        cls.service_example_path.write_text('{"global_env": {}, "services": {}}\n', encoding="utf-8")
         cls.port = find_free_port()
         env = os.environ.copy()
         env["DATA_GATHER_DB_PATH"] = str(cls.db_path)
+        env["DATA_GATHER_SERVICE_CONFIG_PATH"] = str(cls.service_local_path)
+        env["DATA_GATHER_SERVICE_CONFIG_EXAMPLE_PATH"] = str(cls.service_example_path)
         cls.process = subprocess.Popen(
             [
                 sys.executable,
@@ -90,6 +95,18 @@ class ApiIntegrationTests(unittest.TestCase):
             return json.loads(response.read().decode("utf-8"))
 
     @classmethod
+    def put_json(cls, path: str, payload: dict):
+        data = json.dumps(payload).encode("utf-8")
+        http_request = request.Request(
+            cls.build_url(path),
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        with request.urlopen(http_request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    @classmethod
     def get_error_json(cls, path: str):
         try:
             with request.urlopen(cls.build_url(path), timeout=15) as response:
@@ -108,6 +125,7 @@ class ApiIntegrationTests(unittest.TestCase):
         health = self.get_json("/health")
         sources = self.get_json("/api/discovery/sources")
         notices = self.get_json("/api/discovery/notices")
+        mediacrawler_settings = self.get_json("/api/discovery/platform-settings/mediacrawler")
         self.assertEqual(health["status"], "ok")
         self.assertEqual(len(sources), 14)
         self.assertIn("items", notices)
@@ -132,6 +150,27 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("login_status", wechat_source)
         self.assertIn("runtime_state", wechat_source)
         self.assertIn("status_summary", wechat_source)
+        self.assertEqual(mediacrawler_settings["browser_mode"], "safe")
+        self.assertTrue(mediacrawler_settings["browser_headless"])
+        self.assertEqual(mediacrawler_settings["max_sleep_sec"], 4)
+
+    def test_mediacrawler_settings_can_be_updated(self) -> None:
+        payload = self.put_json(
+            "/api/discovery/platform-settings/mediacrawler",
+            {
+                "browser_mode": "cdp",
+                "browser_headless": True,
+                "max_sleep_sec": 6,
+                "max_concurrency": 1,
+                "browser_path": "C:/Chrome/chrome.exe",
+            },
+        )
+        self.assertEqual(payload["browser_mode"], "cdp")
+        self.assertEqual(payload["max_sleep_sec"], 6)
+        self.assertEqual(payload["browser_path"], "C:/Chrome/chrome.exe")
+        fetched = self.get_json("/api/discovery/platform-settings/mediacrawler")
+        self.assertEqual(fetched["browser_mode"], "cdp")
+        self.assertEqual(fetched["max_sleep_sec"], 6)
 
     def test_preview_and_job_queries(self) -> None:
         preview = self.post_json(

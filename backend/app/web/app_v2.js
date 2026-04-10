@@ -42,6 +42,14 @@ const PLATFORM_LOGIN_CONFIG = {
 };
 
 const DEFAULT_SELECTED_PLATFORMS = new Set(["wechat", "xiaohongshu"]);
+const DEFAULT_MEDIACRAWLER_SETTINGS = {
+  browser_mode: "safe",
+  browser_headless: true,
+  max_sleep_sec: 4,
+  max_concurrency: 1,
+  browser_path: "",
+  platform_scope: ["xiaohongshu", "weibo", "douyin", "bilibili"],
+};
 
 const state = {
   sources: [],
@@ -69,6 +77,8 @@ const state = {
     message: "",
     pollTimer: 0,
   },
+  mediacrawlerSettings: null,
+  mediacrawlerSettingsSaving: false,
   activeWorkspaceTab: "hot",
   lastPreview: null,
   previewFilters: {
@@ -184,6 +194,17 @@ const elements = {
   platformLoginQrImage: document.getElementById("platformLoginQrImage"),
   platformLoginQrPlaceholder: document.getElementById("platformLoginQrPlaceholder"),
   platformLoginSteps: document.getElementById("platformLoginSteps"),
+  mediacrawlerSettingsForm: document.getElementById("mediacrawlerSettingsForm"),
+  mediacrawlerScopeChips: document.getElementById("mediacrawlerScopeChips"),
+  mediacrawlerBrowserModeInput: document.getElementById("mediacrawlerBrowserModeInput"),
+  mediacrawlerHeadlessInput: document.getElementById("mediacrawlerHeadlessInput"),
+  mediacrawlerSleepInput: document.getElementById("mediacrawlerSleepInput"),
+  mediacrawlerConcurrencyInput: document.getElementById("mediacrawlerConcurrencyInput"),
+  mediacrawlerBrowserPathInput: document.getElementById("mediacrawlerBrowserPathInput"),
+  mediacrawlerSettingsHint: document.getElementById("mediacrawlerSettingsHint"),
+  mediacrawlerSettingsStatus: document.getElementById("mediacrawlerSettingsStatus"),
+  resetMediacrawlerSettingsButton: document.getElementById("resetMediacrawlerSettingsButton"),
+  saveMediacrawlerSettingsButton: document.getElementById("saveMediacrawlerSettingsButton"),
 };
 
 function escapeHtml(value) {
@@ -320,6 +341,15 @@ function localizeServiceName(serviceName) {
     backend: "控制台后端",
   };
   return mapping[serviceName] || serviceName || "受管服务";
+}
+
+function localizeBrowserMode(mode) {
+  const mapping = {
+    safe: "safe · 推荐",
+    cdp: "cdp · 真实浏览器链路",
+    standard: "standard · 标准 Playwright",
+  };
+  return mapping[mode] || mode || "-";
 }
 
 function localizeContentKind(kind) {
@@ -917,6 +947,84 @@ function renderSourceCards() {
       openPlatformLoginModal(platformKey);
     });
   });
+}
+
+function getMediacrawlerSettingsPayload() {
+  return {
+    browser_mode: elements.mediacrawlerBrowserModeInput.value || DEFAULT_MEDIACRAWLER_SETTINGS.browser_mode,
+    browser_headless: Boolean(elements.mediacrawlerHeadlessInput.checked),
+    max_sleep_sec: Number(elements.mediacrawlerSleepInput.value || DEFAULT_MEDIACRAWLER_SETTINGS.max_sleep_sec),
+    max_concurrency: Number(elements.mediacrawlerConcurrencyInput.value || DEFAULT_MEDIACRAWLER_SETTINGS.max_concurrency),
+    browser_path: elements.mediacrawlerBrowserPathInput.value.trim(),
+  };
+}
+
+function applyMediacrawlerSettingsToForm(settings) {
+  const payload = {
+    ...DEFAULT_MEDIACRAWLER_SETTINGS,
+    ...(settings || {}),
+  };
+  elements.mediacrawlerBrowserModeInput.value = payload.browser_mode;
+  elements.mediacrawlerHeadlessInput.checked = Boolean(payload.browser_headless);
+  elements.mediacrawlerSleepInput.value = String(payload.max_sleep_sec);
+  elements.mediacrawlerConcurrencyInput.value = String(payload.max_concurrency);
+  elements.mediacrawlerBrowserPathInput.value = payload.browser_path || "";
+}
+
+function renderMediacrawlerSettings() {
+  const settings = {
+    ...DEFAULT_MEDIACRAWLER_SETTINGS,
+    ...(state.mediacrawlerSettings || {}),
+  };
+  applyMediacrawlerSettingsToForm(settings);
+  const scope = Array.isArray(settings.platform_scope) && settings.platform_scope.length
+    ? settings.platform_scope
+    : DEFAULT_MEDIACRAWLER_SETTINGS.platform_scope;
+  elements.mediacrawlerScopeChips.innerHTML = scope
+    .map((platform) => `<span class="mini-pill">${escapeHtml(localizePlatform(platform))}</span>`)
+    .join("");
+  elements.mediacrawlerSettingsHint.textContent = `当前模式 ${localizeBrowserMode(settings.browser_mode)}，无头 ${settings.browser_headless ? "开启" : "关闭"}，等待上限 ${settings.max_sleep_sec} 秒，并发 ${settings.max_concurrency}。`;
+  elements.mediacrawlerSettingsStatus.textContent = state.mediacrawlerSettingsSaving
+    ? "正在保存设置..."
+    : "保存后会写入本地配置，下一次 MediaCrawler 抓取立即生效。";
+  elements.saveMediacrawlerSettingsButton.disabled = state.mediacrawlerSettingsSaving;
+  elements.resetMediacrawlerSettingsButton.disabled = state.mediacrawlerSettingsSaving;
+}
+
+async function loadMediacrawlerSettings() {
+  try {
+    state.mediacrawlerSettings = await requestJson("/api/discovery/platform-settings/mediacrawler");
+  } catch (error) {
+    state.mediacrawlerSettings = { ...DEFAULT_MEDIACRAWLER_SETTINGS };
+    elements.mediacrawlerSettingsStatus.textContent = error.message || "读取 MediaCrawler 设置失败。";
+  }
+  renderMediacrawlerSettings();
+}
+
+async function saveMediacrawlerSettings(event) {
+  event.preventDefault();
+  state.mediacrawlerSettingsSaving = true;
+  renderMediacrawlerSettings();
+  try {
+    const payload = getMediacrawlerSettingsPayload();
+    state.mediacrawlerSettings = await requestJson("/api/discovery/platform-settings/mediacrawler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderMediacrawlerSettings();
+    setStatus("MediaCrawler 安全设置已保存，下一次小红书等平台抓取会按新配置运行。", "success");
+  } catch (error) {
+    setStatus(error.message || "保存 MediaCrawler 设置失败。", "error");
+  } finally {
+    state.mediacrawlerSettingsSaving = false;
+    renderMediacrawlerSettings();
+  }
+}
+
+function resetMediacrawlerSettings() {
+  state.mediacrawlerSettings = { ...DEFAULT_MEDIACRAWLER_SETTINGS };
+  renderMediacrawlerSettings();
 }
 
 function renderHeroSummary() {
@@ -2042,6 +2150,8 @@ function bindEvents() {
   elements.platformLoginModal.querySelectorAll("[data-close-platform-login]").forEach((node) => {
     node.addEventListener("click", closePlatformLoginModal);
   });
+  elements.mediacrawlerSettingsForm.addEventListener("submit", saveMediacrawlerSettings);
+  elements.resetMediacrawlerSettingsButton.addEventListener("click", resetMediacrawlerSettings);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideModal();
@@ -2062,8 +2172,9 @@ async function bootstrap() {
   renderUpdateNotices();
   renderWechatLoginModal();
   renderPlatformLoginModal();
+  renderMediacrawlerSettings();
   renderWorkspace();
-  await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices()]);
+  await Promise.allSettled([loadHealth(), loadSources(), loadJobs(), loadUpdateNotices(), loadMediacrawlerSettings()]);
   await loadLocalArticles();
   renderWorkspace();
   window.setInterval(() => {

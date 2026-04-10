@@ -254,6 +254,25 @@ class PlatformLoginSessionResponse(BaseModel):
     auth_key_prefix: str | None = None
 
 
+class PlatformCrawlerSettingsResponse(BaseModel):
+    platform: str
+    display_name: str
+    platform_scope: list[str] = Field(default_factory=list)
+    browser_mode: str = "safe"
+    browser_headless: bool = True
+    max_sleep_sec: int = 4
+    max_concurrency: int = 1
+    browser_path: str = ""
+
+
+class PlatformCrawlerSettingsUpdateRequest(BaseModel):
+    browser_mode: str = Field(default="safe")
+    browser_headless: bool = True
+    max_sleep_sec: int = Field(default=4, ge=1, le=15)
+    max_concurrency: int = Field(default=1, ge=1, le=4)
+    browser_path: str = ""
+
+
 class ServiceActionRequest(BaseModel):
     action: str
 

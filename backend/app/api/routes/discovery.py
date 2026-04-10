@@ -4,6 +4,8 @@ from fastapi.responses import Response
 from app.core.exceptions import NotFoundError
 from app.schemas.workflow import (
     PlatformLoginSessionResponse,
+    PlatformCrawlerSettingsResponse,
+    PlatformCrawlerSettingsUpdateRequest,
     ServiceActionRequest,
     ServiceActionResponse,
     SourceInfoResponse,
@@ -11,6 +13,7 @@ from app.schemas.workflow import (
     WechatLoginSessionResponse,
 )
 from app.services.platform_login import platform_login_service
+from app.services.platform_settings import get_mediacrawler_settings, update_mediacrawler_settings
 from app.services.service_control import get_service_action, start_service_action
 from app.services.platform_status import list_platform_status
 from app.services.registry import adapter_registry
@@ -39,6 +42,16 @@ def list_sources(refresh: bool = Query(default=False)) -> list[SourceInfoRespons
 def get_update_notices() -> UpdateNoticeResponse:
     payload = list_update_notices()
     return UpdateNoticeResponse.model_validate(payload)
+
+
+@router.get("/platform-settings/mediacrawler", response_model=PlatformCrawlerSettingsResponse)
+def get_mediacrawler_platform_settings() -> PlatformCrawlerSettingsResponse:
+    return PlatformCrawlerSettingsResponse.model_validate(get_mediacrawler_settings())
+
+
+@router.put("/platform-settings/mediacrawler", response_model=PlatformCrawlerSettingsResponse)
+def put_mediacrawler_platform_settings(payload: PlatformCrawlerSettingsUpdateRequest) -> PlatformCrawlerSettingsResponse:
+    return PlatformCrawlerSettingsResponse.model_validate(update_mediacrawler_settings(payload.model_dump()))
 
 
 @router.post("/wechat-login/sessions", response_model=WechatLoginSessionResponse)
