@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--login-type", default=os.getenv("XHS_MEDIACRAWLER_LOGIN_TYPE", "qrcode"))
     parser.add_argument("--cookies", default=os.getenv("XHS_MEDIACRAWLER_COOKIES", ""))
     parser.add_argument(
+        "--headless",
+        default=os.getenv("DATA_GATHER_BROWSER_HEADLESS", os.getenv("MEDIACRAWLER_HEADLESS", "true")),
+        help="Whether to run MediaCrawler in headless mode. Defaults to true for server-safe crawling.",
+    )
+    parser.add_argument(
         "--start-command",
         nargs="+",
         default=["uv", "run", "main.py", "--platform", "xhs"],
@@ -43,6 +48,20 @@ def build_subprocess_env(cache_dir: Path) -> dict[str, str]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     env["UV_CACHE_DIR"] = str(cache_dir)
     return env
+
+
+def write_json_stdout(payload: dict[str, Any]) -> None:
+    data = json.dumps(payload, ensure_ascii=False)
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(data.encode("utf-8", errors="replace"))
+        buffer.flush()
+        return
+    sys.stdout.write(data)
+
+
+def parse_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
 def _extract_dict_items(payload: object) -> list[dict[str, Any]]:
@@ -253,20 +272,24 @@ def normalize_fetch_item(contents: list[dict[str, Any]], comments: list[dict[str
 
 
 def build_start_command(args: argparse.Namespace, output_dir: Path) -> list[str]:
+    include_comments = args.mode == "fetch"
     command = list(args.start_command)
     crawler_type = "search" if args.mode == "search" else "detail"
+    headless = parse_bool(getattr(args, "headless", "true"))
     command.extend(
         [
             "--lt",
             args.login_type,
             "--type",
             crawler_type,
+            "--headless",
+            "true" if headless else "false",
             "--save_data_option",
             "json",
             "--save_data_path",
             str(output_dir),
             "--get_comment",
-            "true",
+            "true" if include_comments else "false",
             "--get_sub_comment",
             "false",
         ]
@@ -278,6 +301,17 @@ def build_start_command(args: argparse.Namespace, output_dir: Path) -> list[str]
     else:
         command.extend(["--specified_id", args.source_url])
     return command
+
+
+def should_retry_without_comments(stderr_text: str) -> bool:
+    haystack = str(stderr_text or "").lower()
+    markers = (
+        "get_note_comments",
+        "datafetcherror",
+        "retryerror",
+        "comment",
+    )
+    return any(marker in haystack for marker in markers)
 
 
 def main() -> int:
@@ -293,11 +327,12 @@ def main() -> int:
         stdout_path = temp_root / "stdout.log"
         stderr_path = temp_root / "stderr.log"
         output_dir.mkdir(parents=True, exist_ok=True)
+        command = build_start_command(args, output_dir)
         with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_handle, stderr_path.open(
             "w", encoding="utf-8", errors="replace"
         ) as stderr_handle:
             completed = subprocess.run(
-                build_start_command(args, output_dir),
+                command,
                 cwd=repo_dir,
                 env=build_subprocess_env(cache_dir),
                 stdin=subprocess.DEVNULL,
@@ -308,6 +343,31 @@ def main() -> int:
                 errors="replace",
                 check=False,
             )
+        stderr_tail = stderr_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+        if (
+            completed.returncode != 0
+            and args.mode == "fetch"
+            and "--get_comment" in command
+            and should_retry_without_comments(stderr_tail)
+        ):
+            retry_command = build_start_command(args, output_dir)
+            retry_index = retry_command.index("--get_comment") + 1
+            retry_command[retry_index] = "false"
+            with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_handle, stderr_path.open(
+                "w", encoding="utf-8", errors="replace"
+            ) as stderr_handle:
+                completed = subprocess.run(
+                    retry_command,
+                    cwd=repo_dir,
+                    env=build_subprocess_env(cache_dir),
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
         if completed.returncode != 0:
             stderr_tail = stderr_path.read_text(encoding="utf-8", errors="replace")[-4000:]
             if not stderr_tail:
@@ -320,7 +380,7 @@ def main() -> int:
             payload = {"items": normalize_search_items(args.keyword or "", contents, args.limit)}
         else:
             payload = {"item": normalize_fetch_item(contents, comments, args.source_url or "")}
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+        write_json_stdout(payload)
     return 0
 
 
