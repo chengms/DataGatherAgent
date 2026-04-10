@@ -100,6 +100,18 @@ def build_env(command: list[str], use_shell: bool) -> dict[str, str]:
     return env
 
 
+def windows_background_kwargs() -> dict[str, object]:
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = 0
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
+
+
 def main() -> int:
     args = parse_args()
     command = args.command
@@ -126,6 +138,7 @@ def main() -> int:
         bufsize=1,
         universal_newlines=True,
         env=build_env(command, args.shell),
+        **windows_background_kwargs(),
     )
 
     state = {"started": time.monotonic(), "last_output": time.monotonic()}

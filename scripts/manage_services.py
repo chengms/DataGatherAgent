@@ -49,6 +49,18 @@ def log(message: str) -> None:
     _write_console_line(f"[services] {message}")
 
 
+def windows_background_kwargs() -> dict[str, Any]:
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = 0
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Manage local backend and external crawler services.")
     parser.add_argument(
@@ -393,6 +405,7 @@ def spawn_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> su
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        **windows_background_kwargs(),
     )
     threading.Thread(target=stream_output, args=(process.stdout, service["name"]), daemon=True).start()
     threading.Thread(target=stream_output, args=(process.stderr, service["name"]), daemon=True).start()
@@ -425,6 +438,7 @@ def notify_user(title: str, message: str) -> None:
         ["powershell", "-NoProfile", "-Command", script],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        **windows_background_kwargs(),
     )
 
 

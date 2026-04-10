@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -60,6 +61,7 @@ class PlatformLoginService:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             text=True,
+            **self._windows_background_kwargs(),
         )
         session = PlatformLoginSession(
             session_id=session_id,
@@ -142,6 +144,17 @@ class PlatformLoginService:
             ]
         for session_id in stale_ids:
             self.discard_session(session_id)
+
+    def _windows_background_kwargs(self) -> dict[str, Any]:
+        if os.name != "nt":
+            return {}
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        return {
+            "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            "startupinfo": startupinfo,
+        }
 
 
 platform_login_service = PlatformLoginService()

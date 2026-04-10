@@ -112,6 +112,16 @@ class ManageServicesTests(unittest.TestCase):
         self.assertEqual(kwargs["errors"], "replace")
         self.assertEqual(thread_cls.call_count, 2)
 
+    def test_windows_background_kwargs_adds_no_window_flags(self) -> None:
+        startupinfo = type("StartupInfo", (), {"dwFlags": 0, "wShowWindow": 1})()
+        with patch("manage_services.os.name", "nt"), patch("manage_services.subprocess.STARTUPINFO", return_value=startupinfo), patch(
+            "manage_services.subprocess.STARTF_USESHOWWINDOW", 1
+        ), patch("manage_services.subprocess.CREATE_NO_WINDOW", 134217728):
+            kwargs = manage_services.windows_background_kwargs()
+        self.assertEqual(kwargs["creationflags"], 134217728)
+        self.assertIs(kwargs["startupinfo"], startupinfo)
+        self.assertEqual(startupinfo.wShowWindow, 0)
+
     def test_write_console_line_falls_back_when_stdout_cannot_encode(self) -> None:
         class FailingStdout(StringIO):
             encoding = "gbk"
