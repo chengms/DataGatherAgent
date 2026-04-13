@@ -28,6 +28,17 @@ class FakeWechatExporterClient(WechatExporterServiceClient):
         ]
 
     def download_article(self, url: str, format_name: str = "html") -> str:
+        if format_name == "json":
+            return """
+            {
+              "user_info": {
+                "appmsg_bar_data": {
+                  "read_num": 19450,
+                  "comment_count": 782
+                }
+              }
+            }
+            """
         return """
         <html>
           <body>
@@ -80,8 +91,44 @@ class WechatExporterServiceTests(unittest.TestCase):
         )
         self.assertEqual(article.title, "AI Weekly")
         self.assertEqual(article.account_name, "AI Insight")
+        self.assertEqual(article.read_count, 19450)
+        self.assertEqual(article.comment_count, 782)
         self.assertIn("hello exporter", article.content_text)
         self.assertIn("js_content", article.content_html)
+
+    def test_fetch_adapter_falls_back_to_html_metrics_when_json_is_unavailable(self) -> None:
+        class HtmlOnlyWechatExporterClient(FakeWechatExporterClient):
+            def download_article(self, url: str, format_name: str = "html") -> str:
+                if format_name == "json":
+                    raise SearchRequestError("metadata unavailable")
+                return """
+                <html>
+                  <body>
+                    <h1 id="activity-name">AI Weekly</h1>
+                    <span id="js_name">AI Insight</span>
+                    <span id="publish_time">2026-04-01</span>
+                    <div id="js_content">hello exporter</div>
+                    <script>
+                      window.cgiData = {"read_num": 321, "comment_count": 17};
+                    </script>
+                  </body>
+                </html>
+                """
+
+        adapter = WechatExporterFetchAdapter(client=HtmlOnlyWechatExporterClient())
+        article = adapter.fetch_article(
+            DiscoveryCandidate(
+                keyword="AI",
+                source_engine="wechat_exporter_search",
+                title="AI Weekly",
+                snippet="summary",
+                source_url="https://mp.weixin.qq.com/s/demo-1",
+                account_name="AI Insight",
+                discovered_at=datetime.now(UTC),
+            )
+        )
+        self.assertEqual(article.read_count, 321)
+        self.assertEqual(article.comment_count, 17)
 
 
 if __name__ == "__main__":

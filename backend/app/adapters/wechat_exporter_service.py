@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -86,6 +88,22 @@ class WechatExporterServiceClient:
                 details={"url": url, "response": response.text[:1000]},
             )
         return response.text
+
+    def download_article_json(self, url: str) -> dict[str, Any]:
+        raw = self.download_article(url, format_name="json")
+        try:
+            payload = json.loads(raw)
+        except ValueError as exc:
+            raise FetchRequestError(
+                "wechat exporter JSON metadata response is invalid",
+                details={"url": url, "response": raw[:1000]},
+            ) from exc
+        if not isinstance(payload, dict):
+            raise FetchRequestError(
+                "wechat exporter JSON metadata response is not an object",
+                details={"url": url, "response_type": type(payload).__name__},
+            )
+        return payload
 
     def _extract_items(self, payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):
@@ -184,6 +202,7 @@ class WechatExporterFetchAdapter(BaseFetchAdapter):
     def _fetch_article(self, candidate: DiscoveryCandidate) -> FetchedArticle:
         html = self.client.download_article(candidate.source_url, format_name="html")
         soup = BeautifulSoup(html, "html.parser")
+        metadata = self._load_article_metadata(candidate.source_url, html)
         text = self._extract_content_text(soup)
         content_html = extract_html_fragment(soup, ("#js_content", ".rich_media_content", "article"))
         publish_time = self._extract_publish_time(soup)
@@ -197,12 +216,72 @@ class WechatExporterFetchAdapter(BaseFetchAdapter):
             source_url=candidate.source_url,
             account_name=self._extract_account_name(soup) or candidate.account_name,
             publish_time=publish_time,
-            read_count=0,
-            comment_count=0,
+            read_count=int(metadata.get("read_count") or 0),
+            comment_count=int(metadata.get("comment_count") or 0),
             content_text=text,
             content_html=content_html,
             source_id=source_id,
         )
+
+    def _load_article_metadata(self, source_url: str, html: str) -> dict[str, int]:
+        try:
+            payload = self.client.download_article_json(source_url)
+        except (FetchRequestError, SearchRequestError):
+            payload = {}
+        return {
+            "read_count": self._extract_read_count(payload, html),
+            "comment_count": self._extract_comment_count(payload, html),
+        }
+
+    def _extract_read_count(self, payload: dict[str, Any], html: str) -> int:
+        for path in (
+            ("user_info", "appmsg_bar_data", "read_num"),
+            ("appmsgstat", "read_num"),
+            ("appmsgstat", "readCount"),
+        ):
+            value = self._dig_int(payload, *path)
+            if value is not None:
+                return value
+        return self._extract_metric_from_html(html, ["read_num", "readCount"])
+
+    def _extract_comment_count(self, payload: dict[str, Any], html: str) -> int:
+        for path in (
+            ("user_info", "appmsg_bar_data", "comment_count"),
+            ("appmsgstat", "comment_count"),
+            ("appmsgstat", "commentCount"),
+        ):
+            value = self._dig_int(payload, *path)
+            if value is not None:
+                return value
+        return self._extract_metric_from_html(html, ["comment_count", "commentCount"])
+
+    def _dig_int(self, payload: dict[str, Any], *path: str) -> int | None:
+        current: Any = payload
+        for key in path:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(key)
+        if isinstance(current, bool):
+            return int(current)
+        if isinstance(current, int):
+            return current
+        if isinstance(current, float):
+            return int(current)
+        if isinstance(current, str) and current.strip().isdigit():
+            return int(current.strip())
+        return None
+
+    def _extract_metric_from_html(self, html: str, keys: list[str]) -> int:
+        for key in keys:
+            patterns = [
+                rf'"{re.escape(key)}"\s*:\s*(\d+)',
+                rf"{re.escape(key)}\s*[:=]\s*['\"]?(\d+)",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, html)
+                if match:
+                    return int(match.group(1))
+        return 0
 
     def _extract_content_text(self, soup: BeautifulSoup) -> str:
         for selector in ("#js_content", ".rich_media_content", "article"):
