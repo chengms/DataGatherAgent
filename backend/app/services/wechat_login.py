@@ -302,14 +302,25 @@ class WechatLoginService:
         auth_key: str,
     ) -> None:
         request = urllib.request.Request(
-            f"{base_url.rstrip('/')}/api/public/v1/authkey",
+            f"{base_url.rstrip('/')}/api/web/mp/info",
             headers={"X-Auth-Key": auth_key},
             method="GET",
         )
         with self._open_with_retry(opener, request, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        if payload.get("code") != 0:
+        if not isinstance(payload, dict):
             raise NetworkError("公众号登录校验失败", {"response": payload})
+        nickname = str(payload.get("nick_name") or "").strip()
+        if nickname:
+            return
+        raise NetworkError(
+            "公众号登录校验失败",
+            {
+                "response": payload,
+                "reason": "auth_invalid",
+                "error": str(payload.get("error") or "nick_name_missing"),
+            },
+        )
 
     def _select_valid_auth_key(
         self,

@@ -118,13 +118,13 @@ def get_cookie_value(opener: urllib.request.OpenerDirector, name: str) -> str | 
 
 def ensure_authkey_valid(opener: urllib.request.OpenerDirector, base_url: str, auth_key: str) -> None:
     req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/api/public/v1/authkey",
+        f"{base_url.rstrip('/')}/api/web/mp/info",
         headers={"X-Auth-Key": auth_key},
         method="GET",
     )
     with open_with_retry(opener, req, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    if payload.get("code") != 0:
+    if not isinstance(payload, dict) or not str(payload.get("nick_name") or "").strip():
         raise RuntimeError(f"wechat exporter auth-key validation failed: {payload}")
 
 

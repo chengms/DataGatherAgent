@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from app.core.exceptions import NetworkError
 from app.services.wechat_login import WechatLoginService, WechatLoginSession
 
 
@@ -111,6 +112,40 @@ class WechatLoginServiceTests(unittest.TestCase):
             extra_headers={"Cookie": "uuid=test-uuid"},
         )
         self.assertEqual(payload["status"], "pending_scan")
+
+    def test_ensure_authkey_valid_requires_real_mp_profile(self) -> None:
+        service = WechatLoginService()
+
+        class DummyResponse:
+            def __init__(self, payload: dict) -> None:
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                import json
+
+                return json.dumps(self.payload).encode("utf-8")
+
+        with patch.object(
+            service,
+            "_open_with_retry",
+            return_value=DummyResponse({"nick_name": "AI Insight", "head_img": "https://example.com/avatar.png"}),
+        ):
+            service._ensure_authkey_valid(object(), "http://127.0.0.1:3000", "auth-key")
+
+        with patch.object(
+            service,
+            "_open_with_retry",
+            return_value=DummyResponse({"nick_name": "", "head_img": ""}),
+        ):
+            with self.assertRaises(NetworkError) as context:
+                service._ensure_authkey_valid(object(), "http://127.0.0.1:3000", "auth-key")
+        self.assertEqual(context.exception.details["reason"], "auth_invalid")
 
 
 if __name__ == "__main__":

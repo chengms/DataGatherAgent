@@ -69,6 +69,13 @@ class WechatExporterServiceTests(unittest.TestCase):
         self.assertEqual(context.exception.details["ret"], -1)
         self.assertEqual(context.exception.details["err_msg"], "invalid token")
 
+    def test_service_client_marks_invalid_session_as_auth_invalid(self) -> None:
+        client = WechatExporterServiceClient(base_url="https://example.com", api_key="token")
+        with self.assertRaises(SearchRequestError) as context:
+            client._extract_items({"base_resp": {"ret": 200003, "err_msg": "invalid session"}})
+        self.assertEqual(context.exception.details["ret"], 200003)
+        self.assertEqual(context.exception.details["reason"], "auth_invalid")
+
     def test_search_adapter_builds_candidates_from_service(self) -> None:
         adapter = WechatExporterSearchAdapter(client=FakeWechatExporterClient())
         items = adapter.discover(keyword="AI", limit=1)

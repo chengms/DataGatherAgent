@@ -21,7 +21,7 @@ def main() -> int:
         return 0
 
     request = urllib.request.Request(
-        f"{base_url}/api/public/v1/authkey",
+        f"{base_url}/api/web/mp/info",
         headers={"X-Auth-Key": auth_key},
         method="GET",
     )
@@ -32,12 +32,12 @@ def main() -> int:
         print(json.dumps({"ok": False, "reason": "service_unreachable"}, ensure_ascii=False))
         return 0
 
-    ok = isinstance(data, dict) and data.get("code") == 0
+    ok = isinstance(data, dict) and bool(str(data.get("nick_name") or "").strip())
     print(
         json.dumps(
             {
                 "ok": ok,
-                "reason": "ok" if ok else str(data.get("msg") or "auth_invalid"),
+                "reason": "ok" if ok else str(data.get("error") or "auth_invalid"),
             },
             ensure_ascii=False,
         )

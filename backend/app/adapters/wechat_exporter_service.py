@@ -111,11 +111,23 @@ class WechatExporterServiceClient:
         if isinstance(payload, dict):
             base_resp = payload.get("base_resp")
             if isinstance(base_resp, dict) and int(base_resp.get("ret", 0) or 0) != 0:
+                ret = int(base_resp.get("ret", 0) or 0)
+                err_msg = base_resp.get("err_msg")
+                if ret == 200003:
+                    raise SearchRequestError(
+                        "wechat exporter login session is invalid",
+                        details={
+                            "ret": ret,
+                            "err_msg": err_msg,
+                            "reason": "auth_invalid",
+                            "payload_keys": list(payload.keys())[:20],
+                        },
+                    )
                 raise SearchRequestError(
                     "wechat exporter request returned an error",
                     details={
-                        "ret": base_resp.get("ret"),
-                        "err_msg": base_resp.get("err_msg"),
+                        "ret": ret,
+                        "err_msg": err_msg,
                         "payload_keys": list(payload.keys())[:20],
                     },
                 )
