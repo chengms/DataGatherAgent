@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import discovery, external_exports, workflows
 from app.core.exceptions import AppException
@@ -20,6 +21,18 @@ ensure_db_initialized()
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 app = FastAPI(title="Data Gather Agent", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4000",
+        "http://localhost:4010",
+        "http://127.0.0.1:4000",
+        "http://127.0.0.1:4010",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
