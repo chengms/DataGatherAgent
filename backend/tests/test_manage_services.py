@@ -28,6 +28,45 @@ class ManageServicesTests(unittest.TestCase):
                 manage_services.ensure_required_binaries(service)
         self.assertIn("missing-tool", str(context.exception))
 
+    def test_python_binary_requirement_accepts_python311_fallback(self) -> None:
+        service = {"name": "backend", "requires": ["python"]}
+        with patch("manage_services.shutil.which") as which:
+            which.side_effect = lambda name: {
+                "python": None,
+                "python3.11": "/home/test/.local/bin/python3.11",
+                "python3": "/usr/bin/python3",
+            }.get(name)
+            manage_services.ensure_required_binaries(service)
+
+    def test_resolve_command_prefers_python311_when_python_is_missing(self) -> None:
+        with patch("manage_services.shutil.which") as which:
+            which.side_effect = lambda name: {
+                "python": None,
+                "python3.11": "/home/test/.local/bin/python3.11",
+                "python3": "/usr/bin/python3",
+            }.get(name)
+            resolved = manage_services.resolve_command(["python", "scripts/bootstrap_stack.py"])
+        self.assertEqual(
+            resolved,
+            ["/home/test/.local/bin/python3.11", "scripts/bootstrap_stack.py"],
+        )
+
+    def test_resolve_command_prefers_local_venv_python_for_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            backend_dir = Path(tempdir)
+            python_bin = backend_dir / ".venv" / "bin" / "python"
+            python_bin.parent.mkdir(parents=True)
+            python_bin.write_text("", encoding="utf-8")
+            with patch("manage_services.shutil.which", return_value="/home/test/.local/bin/python3.11"):
+                resolved = manage_services.resolve_command(
+                    ["python", "-m", "uvicorn", "app.main:app"],
+                    cwd=backend_dir,
+                )
+        self.assertEqual(
+            resolved,
+            [str(python_bin), "-m", "uvicorn", "app.main:app"],
+        )
+
     def test_port_check_detects_busy_port(self) -> None:
         with patch("manage_services.socket.socket") as socket_cls:
             socket_instance = socket_cls.return_value.__enter__.return_value
@@ -114,9 +153,19 @@ class ManageServicesTests(unittest.TestCase):
 
     def test_windows_background_kwargs_adds_no_window_flags(self) -> None:
         startupinfo = type("StartupInfo", (), {"dwFlags": 0, "wShowWindow": 1})()
-        with patch("manage_services.os.name", "nt"), patch("manage_services.subprocess.STARTUPINFO", return_value=startupinfo), patch(
-            "manage_services.subprocess.STARTF_USESHOWWINDOW", 1
-        ), patch("manage_services.subprocess.CREATE_NO_WINDOW", 134217728):
+        with patch("manage_services.os.name", "nt"), patch(
+            "manage_services.subprocess.STARTUPINFO",
+            return_value=startupinfo,
+            create=True,
+        ), patch(
+            "manage_services.subprocess.STARTF_USESHOWWINDOW",
+            1,
+            create=True,
+        ), patch(
+            "manage_services.subprocess.CREATE_NO_WINDOW",
+            134217728,
+            create=True,
+        ):
             kwargs = manage_services.windows_background_kwargs()
         self.assertEqual(kwargs["creationflags"], 134217728)
         self.assertIs(kwargs["startupinfo"], startupinfo)

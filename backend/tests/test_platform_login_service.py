@@ -57,11 +57,17 @@ class PlatformLoginServiceTests(unittest.TestCase):
         service = PlatformLoginService()
         startupinfo = type("StartupInfo", (), {"dwFlags": 0, "wShowWindow": 1})()
         with patch("app.services.platform_login.os.name", "nt"), patch(
-            "app.services.platform_login.subprocess.STARTUPINFO", return_value=startupinfo
+            "app.services.platform_login.subprocess.STARTUPINFO",
+            return_value=startupinfo,
+            create=True,
         ), patch(
-            "app.services.platform_login.subprocess.STARTF_USESHOWWINDOW", 1
+            "app.services.platform_login.subprocess.STARTF_USESHOWWINDOW",
+            1,
+            create=True,
         ), patch(
-            "app.services.platform_login.subprocess.CREATE_NO_WINDOW", 134217728
+            "app.services.platform_login.subprocess.CREATE_NO_WINDOW",
+            134217728,
+            create=True,
         ):
             kwargs = service._windows_background_kwargs()
         self.assertEqual(kwargs["creationflags"], 134217728)

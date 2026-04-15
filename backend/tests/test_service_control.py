@@ -100,6 +100,7 @@ class ServiceControlTests(unittest.TestCase):
     def test_launch_service_retries_with_shell_on_windows_invalid_argument(self) -> None:
         service = {"name": "wechat_exporter", "start": ["corepack", "yarn", "dev"]}
         process = MagicMock()
+        cwd = Path(".")
         invalid_argument = OSError(22, "Invalid argument")
         with patch("app.services.service_control.manage_services.resolve_command", return_value=["corepack.cmd", "yarn", "dev"]), patch(
             "app.services.service_control.os.name", "nt"
@@ -107,7 +108,7 @@ class ServiceControlTests(unittest.TestCase):
             "app.services.service_control.subprocess.Popen",
             side_effect=[invalid_argument, process],
         ) as popen:
-            launched_process, log_path = service_control._launch_service(service, Path("."), {})
+            launched_process, log_path = service_control._launch_service(service, cwd, {})
 
         self.assertIs(launched_process, process)
         self.assertEqual(log_path.name, "wechat_exporter.log")

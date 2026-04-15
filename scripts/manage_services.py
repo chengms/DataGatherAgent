@@ -49,6 +49,37 @@ def log(message: str) -> None:
     _write_console_line(f"[services] {message}")
 
 
+def _local_python_from_cwd(cwd: Path | None) -> str | None:
+    if cwd is None:
+        return None
+    for candidate in (
+        cwd / ".venv" / "bin" / "python",
+        cwd / ".venv" / "Scripts" / "python.exe",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def resolve_binary(binary: str, *, cwd: Path | None = None) -> str | None:
+    if binary in {"python", "python3", "python3.11"}:
+        local_python = _local_python_from_cwd(cwd)
+        if local_python:
+            return local_python
+
+    candidates = [binary]
+    if binary == "python":
+        candidates = ["python", "python3.11", "python3"]
+    elif binary == "python3":
+        candidates = ["python3", "python3.11", "python"]
+
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return None
+
+
 def windows_background_kwargs() -> dict[str, Any]:
     if os.name != "nt":
         return {}
@@ -105,7 +136,7 @@ def merged_env(service: dict[str, Any], global_env: dict[str, Any], service_over
 def ensure_required_binaries(service: dict[str, Any]) -> None:
     missing: list[str] = []
     for binary in service.get("requires", []):
-        if shutil.which(binary) is None:
+        if resolve_binary(str(binary)) is None:
             missing.append(binary)
     if missing:
         raise RuntimeError(
@@ -242,12 +273,12 @@ def cleanup_stale_git_lock(repo_dir: Path, *, stale_after_seconds: int = 60) -> 
     log(f"removed stale git lock {lock_path}")
 
 
-def resolve_command(command: list[str]) -> list[str]:
+def resolve_command(command: list[str], *, cwd: Path | None = None) -> list[str]:
     if not command:
         return command
 
     executable = command[0]
-    resolved = shutil.which(executable)
+    resolved = resolve_binary(str(executable), cwd=cwd)
     if resolved:
         resolved_path = Path(resolved)
         if os.name == "nt" and resolved_path.suffix.lower() == "":
@@ -264,7 +295,7 @@ def resolve_command(command: list[str]) -> list[str]:
 
 
 def run_command(command: list[str], cwd: Path, env: dict[str, str]) -> None:
-    command = resolve_command(command)
+    command = resolve_command(command, cwd=cwd)
     log(f"running {shlex.join(command)} in {cwd}")
     completed = subprocess.run(command, cwd=cwd, env=env, check=False)
     if completed.returncode != 0:
@@ -393,7 +424,7 @@ def stream_output(pipe, prefix: str) -> None:
 
 
 def spawn_service(service: dict[str, Any], cwd: Path, env: dict[str, str]) -> subprocess.Popen[str]:
-    command = resolve_command(service["start"])
+    command = resolve_command(service["start"], cwd=cwd)
     log(f"starting {service['name']}: {shlex.join(command)}")
     process = subprocess.Popen(
         command,
@@ -477,7 +508,7 @@ def run_login_check(service: dict[str, Any], env: dict[str, str]) -> tuple[bool,
     ok_equals = login_check.get("ok_equals", True)
     if check_type == "command_json":
         cwd = resolve_path(str(login_check.get("cwd", ".")))
-        argv = [str(resolve_runtime_value(item, env)) for item in login_check.get("argv", [])]
+        argv = resolve_command([str(resolve_runtime_value(item, env)) for item in login_check.get("argv", [])], cwd=cwd)
         completed = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, check=False, timeout=120)
         stdout = completed.stdout.strip() or "{}"
         try:
@@ -595,7 +626,7 @@ def inspect_repo_update(service: dict[str, Any]) -> dict[str, Any]:
 
     try:
         cleanup_stale_git_lock(repo_dir)
-        fetch_command = resolve_command(["git", "fetch", "origin", branch])
+        fetch_command = resolve_command(["git", "fetch", "origin", branch], cwd=repo_dir)
         completed = subprocess.run(
             fetch_command,
             cwd=repo_dir,

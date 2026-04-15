@@ -82,6 +82,7 @@ class ExternalToolRunner:
 class ExternalToolAdapterMixin:
     repository: ExternalRepositorySpec
     runner: ExternalToolRunner
+    requires_managed_checkout = False
 
     def __init__(self, runner: ExternalToolRunner | None = None) -> None:
         self.runner = runner or ExternalToolRunner()
@@ -99,6 +100,21 @@ class ExternalToolAdapterMixin:
             "path": str(self.managed_repository_path()),
             "update_strategy": self.repository.update_strategy,
         }
+
+    def ensure_managed_repository_exists(self, *, action: str) -> Path:
+        repo_path = self.managed_repository_path()
+        if not self.requires_managed_checkout:
+            return repo_path
+        if repo_path.exists():
+            return repo_path
+
+        details = {
+            **self.describe_managed_repository(),
+            "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed checkout.",
+        }
+        if action == "search":
+            raise SearchRequestError("managed external checkout is missing", details=details)
+        raise FetchRequestError("managed external checkout is missing", details=details)
 
     def _normalize_comments(self, raw: object) -> list[ArticleComment]:
         if not isinstance(raw, list):
@@ -163,6 +179,7 @@ class ExternalDiscoveryAdapter(ExternalToolAdapterMixin, BaseDiscoveryAdapter):
         raise NotImplementedError
 
     def _discover(self, keyword: str, limit: int) -> list[DiscoveryCandidate]:
+        self.ensure_managed_repository_exists(action="search")
         command = self.build_discovery_command(keyword=keyword, limit=limit)
         result = self.runner.run(command)
         if result.exit_code != 0:
@@ -192,6 +209,7 @@ class ExternalFetchAdapter(ExternalToolAdapterMixin, BaseFetchAdapter):
         raise NotImplementedError
 
     def _fetch_article(self, candidate: DiscoveryCandidate) -> FetchedArticle:
+        self.ensure_managed_repository_exists(action="fetch")
         command = self.build_fetch_command(candidate)
         result = self.runner.run(command)
         if result.exit_code != 0:
@@ -209,6 +227,7 @@ class ExternalFetchAdapter(ExternalToolAdapterMixin, BaseFetchAdapter):
 
 
 class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
+    requires_managed_checkout = True
     info = AdapterInfo(
         name="xiaohongshu_external_search",
         kind="search",
@@ -225,14 +244,6 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
 
     def build_discovery_command(self, keyword: str, limit: int) -> ExternalCommandSpec:
         repo_path = self.managed_repository_path()
-        if not repo_path.exists():
-            raise SearchRequestError(
-                "managed MediaCrawler checkout is missing",
-                details={
-                    **self.describe_managed_repository(),
-                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
-                },
-            )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
         runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
@@ -282,6 +293,7 @@ class MediaCrawlerXiaohongshuDiscoveryAdapter(ExternalDiscoveryAdapter):
 
 
 class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
+    requires_managed_checkout = True
     info = AdapterInfo(
         name="xiaohongshu_external_fetch",
         kind="fetch",
@@ -293,14 +305,6 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
 
     def build_fetch_command(self, candidate: DiscoveryCandidate) -> ExternalCommandSpec:
         repo_path = self.managed_repository_path()
-        if not repo_path.exists():
-            raise FetchRequestError(
-                "managed MediaCrawler checkout is missing",
-                details={
-                    **self.describe_managed_repository(),
-                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
-                },
-            )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_xhs_runner_v2.py"
         runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
@@ -359,19 +363,12 @@ class MediaCrawlerXiaohongshuFetchAdapter(ExternalFetchAdapter):
 
 
 class MediaCrawlerPlatformDiscoveryAdapter(ExternalDiscoveryAdapter):
+    requires_managed_checkout = True
     platform_name: str
     runner_name: str
 
     def build_discovery_command(self, keyword: str, limit: int) -> ExternalCommandSpec:
         repo_path = self.managed_repository_path()
-        if not repo_path.exists():
-            raise SearchRequestError(
-                "managed MediaCrawler checkout is missing",
-                details={
-                    **self.describe_managed_repository(),
-                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
-                },
-            )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
         runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(
@@ -423,18 +420,11 @@ class MediaCrawlerPlatformDiscoveryAdapter(ExternalDiscoveryAdapter):
 
 
 class MediaCrawlerPlatformFetchAdapter(ExternalFetchAdapter):
+    requires_managed_checkout = True
     platform_name: str
 
     def build_fetch_command(self, candidate: DiscoveryCandidate) -> ExternalCommandSpec:
         repo_path = self.managed_repository_path()
-        if not repo_path.exists():
-            raise FetchRequestError(
-                "managed MediaCrawler checkout is missing",
-                details={
-                    **self.describe_managed_repository(),
-                    "service_hint": "Run ./up.sh or .\\up.ps1 to prepare the managed MediaCrawler checkout.",
-                },
-            )
         runner_script = BASE_DIR.parent / "scripts" / "mediacrawler_platform_runner.py"
         runtime_args = build_mediacrawler_runtime_cli_args()
         return ExternalCommandSpec(

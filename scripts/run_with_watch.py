@@ -95,7 +95,7 @@ def build_env(command: list[str], use_shell: bool) -> dict[str, str]:
     env = os.environ.copy()
     if not use_shell and command:
         executable = Path(command[0]).name.lower()
-        if executable in {"python", "python.exe", "python3", "py"}:
+        if executable == "py" or executable.startswith("python"):
             env.setdefault("PYTHONUNBUFFERED", "1")
     return env
 

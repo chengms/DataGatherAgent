@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT_DIR / "backend"
-REQUIRED_MODULES = ("fastapi", "uvicorn", "pydantic", "requests", "bs4")
+REQUIRED_MODULES = ("fastapi", "uvicorn", "pydantic", "requests", "bs4", "PIL")
 
 
 def missing_modules() -> list[str]:
