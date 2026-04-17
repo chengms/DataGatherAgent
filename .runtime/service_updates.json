@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-04-17T13:11:05.551334+00:00",
+  "items": [
+    {
+      "service_name": "wechat_exporter",
+      "status": "up_to_date",
+      "branch": "master",
+      "ahead_by": 0,
+      "local_sha": "e6ebbf3",
+      "remote_sha": "e6ebbf3",
+      "summary": "already on the latest remote revision"
+    },
+    {
+      "service_name": "mediacrawler_xhs",
+      "status": "up_to_date",
+      "branch": "main",
+      "ahead_by": 0,
+      "local_sha": "15a20a7",
+      "remote_sha": "15a20a7",
+      "summary": "already on the latest remote revision"
+    },
+    {
+      "service_name": "backend",
+      "status": "not_managed",
+      "summary": "internal service"
+    }
+  ]
+}
