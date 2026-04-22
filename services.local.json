@@ -1,0 +1,30 @@
+{
+  "global_env": {
+    "WECHAT_EXPORTER_API_KEY": "filled-by-login-wechat-script"
+  },
+  "services": {
+    "wechat_exporter": {
+      "env": {
+        "DEBUG_KEY": "data-gather-agent-wechat-debug"
+      }
+    },
+    "mediacrawler_xhs": {
+      "env": {
+        "XHS_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "XHS_MEDIACRAWLER_COOKIES": "",
+        "WEIBO_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "WEIBO_MEDIACRAWLER_COOKIES": "",
+        "DY_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "DY_MEDIACRAWLER_COOKIES": "",
+        "BILI_MEDIACRAWLER_LOGIN_TYPE": "qrcode",
+        "BILI_MEDIACRAWLER_COOKIES": ""
+      }
+    },
+    "backend": {
+      "env": {
+        "WECHAT_EXPORTER_BASE_URL": "http://127.0.0.1:3000",
+        "XHS_MEDIACRAWLER_BASE_URL": "http://127.0.0.1:8080"
+      }
+    }
+  }
+}
